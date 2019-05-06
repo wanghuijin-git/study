@@ -44,8 +44,8 @@ apawn命令是expect的初始命令。它用于启动一个进程，之后所有
 spawn ssh root@192.168.1.31 ifconfig ens33
 ```
 在spawn命令后面，直接加上要启动的进程、命令等信息。除此之外，spawn还支持其他选项如：  
--open    启动文件进程  
--ignore	忽略某些信号
+- -open    启动文件进程  
+- -ignore	忽略某些信号
 
 #### expect
 使用方法：expect 表达式 动作 表达式 动作 ......  
