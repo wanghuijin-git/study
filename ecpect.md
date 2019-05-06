@@ -1,4 +1,4 @@
-# ecpect
+# expect
 ## 概述
 我们通过Shell可以实现简单的控制流功能，如：循环、判断等。但是对于需要交互的场合则必须通过人工来干预，有时候我们可能会需要实现和交互程序如telnet服务器等进行交互的功能。而expect就使用来实现这种功能的工具。  
 expect是一个免费的编程工具语言，用来实现自动和交互式任务进行通信，而无需人的干预。expect是不断发展的，随着时间的流逝，其功能越来越强大，已经成为系统管理员的的一个强大助手。expect需要Tcl编程语言的支持，要在系统上运行expect必须首先安装Tcl。  
@@ -37,7 +37,7 @@ ens33: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
 
 ```
 
-### expect语法
+### expect 语法
 #### spawn
 apawn命令是expect的初始命令。它用于启动一个进程，之后所有expect操作都在这个进程中进行，如果没有spawn语句，整个expect就无法执行
 ```
@@ -96,12 +96,146 @@ expect {
 expect eof
 exit
 ```
+
 #### send_user
 send_user命令用来把后面的参数输出到标准输出中去，默认的send、exp_send命令都是将参数输出到程序中去的，用起来像这样：
 ```
 send_user "Please input password:"
 ```
 这句语句就可以在标准输出中打印Please input password:字符了
+```
+[root@manager expect]# cat test4.sh 
+#!/usr/bin/expect
+if { $argc != 3 } {
+    send_user "usage:expect scp-expect.exp file host dir\n"
+    exit
+}
+
+#define var
+set file [lindex $argv 0]
+set host [lindex $argv 1]
+set dir [lindex $argv 2]
+set password "1qaz!QAZ"
+spawn scp $file root@$host:$dir
+expect {
+	-timeout 5
+	"yes/no" {send "yes\r";exp_continue}
+	"*password:" {send "$password"}
+	timeout {puts "expect connect time,pls connect jichengxi."; return}
+}
+expect eof
+exit -onexit {
+	send_user "bye bye"
+}
+
+[root@manager expect]# expect test4.sh 
+usage:expect scp-expect.exp file host dir
+```
+
+#### exit
+exit命令很简单，就是直接退出脚本，但是你可以利用这个命令对脚本做一些扫尾工作，比如下面这样：
+```
+exit -onexit {
+	send_user "bye bye"
+}
+```
+
+### expect 变量
+expect中有很多有用的变量，他们的使用方法和TCL语言中的变量相同，比如：  
+set 变量名 变量值 #设置变量的方法  
+puts $变量名 #读取变量的方法
+```
+#define var
+set file [lindex $argv 0]
+set host [lindex $argv 1]
+set dir [lindex $argv 2]
+set password "1qaz!QAZ"
+```
+
+### expect 关键字
+#### eof
+eof(end-of-file)关键字用于匹配结束符，比如文件的结束符，ftp传输停止等情况，在这个关键字后跟上动作来进行进一步的控制，特别是ftp交互操作方面，它的作用很大，用一个例子看看：
+```
+spawn ftp test@192.168.1.31
+expect {
+	"password:" {exp_send "test1"}
+	eof {ftp connect close}
+}
+interact {}
+```
+
+#### timeout
+timeout是expect中一个重要变量，它是一个全局性的时间控制开关，可以通过为这个变量赋值来规定整个expect操作的时间，注意这个变量是服务与expect全局的，它不会纠缠于某一条命令，即使命令没有任何错误，到时间仍然会激活这个变量，但这个时间到达以后除了激活一个开关之外不会做其他事情，如何处理是脚本编写人员的事情，看看它的实际用法：
+```
+spawn ssh root@192.168.1.32 ifconfig ens33
+set timeout 60
+expect {
+	"*password:" {exp_send "1qaz!QAZ\r";}
+}
+expect {
+	timeout {puts "expect was timeout"; return}
+}
+```
+在上面的处理中，首先将timeout变量设置为60秒，当出现问题的时候程序可能会停止下来，只要到60秒，就会激活下面的timeout动作。  
+在另一种expect格式中，还有一种设置timeout变量的方法，看看下面的例子：
+```
+spawn ssh root@192.168.1.32 ifconfig ens33
+expect {
+        -timeout 60
+        -re "*password:" {exp_send "1qaz!QAZ\r";}
+        timeout {puts "expect was timeout"; return}
+}
+```
+在expect命令中间加上一个小横杠，也可以设置timeout变量。  
+**timeout变量中，设置为0表示立即超时，设置为-1则表示永不超时。**
+```
+if { $argc != 3 } {
+    send_user "usage:expect scp-expect.exp file host dir\n"
+    exit
+}
+#define var
+set file [lindex $argv 0]
+set host [lindex $argv 1]
+set dir [lindex $argv 2]
+set password "1qaz!QAZ"
+spawn scp $file root@$host:$dir
+expect {
+	-timeout 5
+	"yes/no" {send "yes\r";exp_continue}
+	"*password:" {send "$password"}
+	timeout {puts "expect connect time,pls connect jichengxi."; return}
+}
+expect eof
+exit -onexit {
+	send_user "bye bye"
+}
+```
+
+### 批量分发ssh_key
+```
+[root@manager expect]# cat fenfa_ssh.sh 
+#!/bin/bash
+for i in `cat ip_list`
+do
+    /usr/bin/expect -c "
+	spawn ssh $i mkdir -p /root/.ssh
+	expect {
+		\"yes/no\" {send \"yes\r\"; exp_continue}
+		\"*password:\" {send \"1qaz!QAZ\r;\"; exp_continue}
+	}
+	spawn scp /root/.ssh/id_rsa.pub $i:/root/.ssh/
+	expect {
+                \"yes/no\" {send \"yes\r\"; exp_continue}
+                \"*password:\" {send \"1qaz!QAZ\r;\"; exp_continue}
+        }
+        spawn ssh $i mv /root/.ssh/id_rsa.pub /root/.ssh/authorized_keys
+                expect {
+                \"yes/no\" {send \"yes\r\"; exp_continue}
+                \"*password:\" {send \"1qaz!QAZ\r;\"; exp_continue}
+        }
+    "
+done
+```
 
 
 
