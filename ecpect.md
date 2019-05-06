@@ -71,7 +71,37 @@ expect {
 ```
 
 #### exp_send和send
+exp_send命令是expect中的动作命令，它还有一个完成共同工作的同胞:send。exp_send可以发送一些特殊符号，如\r(回车)，\n(换行)，\t(制表符)等等，这些都与TCL中的特殊符号相同。
+```
+spawn ssh root@192.168.1.32 ifconfig ens33
+expect {
+	"yes/no" {send "yes\r"; exp_continue }
+	"*password:" {exp_send "1qaz!QAZ\r";}
+}
+```
+sed命令有几个可用的参数  
+- -i 	指定spawn_id，这个参数用来向不同的spawn_id的进程发送命令，是进行多程序控制的关键参数。  
+- -s 	s代表slowly，也就是控制发送的速度，这个参数使用的时候要与expect中的变量send_slow相关联。
 
+#### exp_continue
+这个命令一般用在动作中，它被使用的条件比较苛刻。
+```
+#!/usr/bin/expect
+spawn ssh root@192.168.1.32 ifconfig ens33
+set timeout 60
+expect {
+	"yes/no" {exp_send "yes\r"; exp_continue }
+	"*password:" {exp_send "1qaz!QAZ\r";}
+}
+expect eof
+exit
+```
+#### send_user
+send_user命令用来把后面的参数输出到标准输出中去，默认的send、exp_send命令都是将参数输出到程序中去的，用起来像这样：
+```
+send_user "Please input password:"
+```
+这句语句就可以在标准输出中打印Please input password:字符了
 
 
 
