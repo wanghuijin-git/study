@@ -486,9 +486,114 @@ par2: ada
 ByUserName
 ada
 ```
- 
+### 模块
+```
+<#
+.Synopsis
+    更改用户属性
+.DESCRIPTION
+    此命令用于更改活动目录用户的属性
+.EXAMPLE
+    PS C:\Users\Administrator> set-jcxuser -UserDN CN=jcx2 -PathDN "OU=jcx,DC=jcx,DC=com" -Properties Description -PropertieValue 123456
+
+    确认是否确实要执行此操作?
+    正在目标“CN=jcx2”上执行操作“更改属性:Description更改为123456”。
+    [Y] 是(Y)  [A] 全是(A)  [N] 否(N)  [L] 全否(L)  [S] 挂起(S)  [?] 帮助 (默认值为“Y”): y
+
+    distinguishedName : {CN=jcx2,OU=jcx,DC=jcx,DC=com}
+    Path              : LDAP://WIN-2MCU4UVOCKN.jcx.com/CN=jcx2,OU=jcx,DC=jcx,DC=com
+
+.INPUTS
+    System.string
+.OUTPUTS
+    DirectoryServices.DirectoryEntry
+.NOTES
+    一般注释
+.COMPONENT
+    此 cmdlet 所属的组件
+.ROLE
+    此 cmdlet 所属的角色
+.FUNCTIONALITY
+    最准确描述此 cmdlet 的功能
+.Parameter UserDN
+    用户的DN表示
+    CN=jcx1
+#>
+
+function set-jcxuser
+{
+    [Cmdletbinding(SupportsShouldProcess=$true,Confirmimpact=[System.Management.Automation.ConfirmImpact]::High)]
+    param
+    (
+        [parameter(Mandatory=$true)]
+        [ValidatePattern("[C][N][=][0-9a-z]")]
+        [string]$UserDN,
+        [parameter(Mandatory=$true)]
+        [string]$PathDN,
+        [parameter(Mandatory=$true)]
+        [string]$Properties,
+        [parameter(Mandatory=$true)]
+        [string]$PropertieValue,
+        [string]$Server
+    )
+    begin
+    {}
+    process
+    {
+        if($PSCmdlet.ShouldProcess($UserDN,"更改属性:"+$Properties+"更改为"+$PropertieValue))
+        {
+            if($Server)
+            {
+                $PSCmdlet.WriteVerbose("使用用户输入构造LADPString")
+                $LADPString="LDAP://"+$Server+"/"+$PathDN
+            }
+            else
+            {
+                $PSCmdlet.WriteVerbose("自动发现DC构造LADPString")
+                $DefaultDomain=[System.DirectoryServices.ActiveDirectory.DirectoryContextType] ([System.DirectoryServices.ActiveDirectory.DirectoryContextType]::Domain);
+                $DefaultDC=[System.DirectoryServices.ActiveDirectory.DomainController]::FindOne($DefaultDomain,[System.DirectoryServices.ActiveDirectory.LocatorOptions]::WriteableRequired)
+                $LADPString="LDAP://"+$DefaultDC.Name+"/"+$PathDN
+            }
+            $PSCmdlet.WriteVerbose("初始化DirectoryEntry")
+            $Entry=New-Object System.DirectoryServices.DirectoryEntry("$LADPString")
+            $PSCmdlet.WriteVerbose("查找用户")
+            $User=$Entry.Children.Find("$UserDN","User")
+            $PSCmdlet.WriteVerbose("修改属性")
+            $User.$Properties.value=$PropertieValue
+            $PSCmdlet.WriteVerbose("提交修改")
+            $User.CommitChanges()
+        }
+    }
+    end
+    {
+        $PSCmdlet.WriteObject($User)
+    }
+}
+```
+- 模块文件：将函数另存为.psm1结尾的文件。
+- 模块描述文件
+    - 命令：New-ModuleManifest
+    - -Path：模块存放路径
+    - -Author：作者名
+    - -CompanyName：公司名
+    - -Copyright：版权信息
+    - -FileList：此模块内包含的psm1文件或者其他应该包含的文件
+    - -ModuleList：与此模块相关的其他模块
+    - -CmdletsToExport：此模块到处的命令
+```
+PS C:\> New-ModuleManifest -Path 'C:\Users\Administrator\Desktop\jcxuser\jcxuser.psd1' -Author jichengxi -CompanyName jcx -Copyright "2019 (R) tiancheng" -FileList "jcxuser.psm1" -CmdletsToExport "set-jcxuser"
+
+PS C:\> Test-ModuleManifest -Path 'C:\Users\Administrator\Desktop\jcxuser\jcxuser.psd1'
+
+ModuleType Version    Name                                ExportedCommands
+---------- -------    ----                                ----------------
+Manifest   1.0        jcxuser                             set-jcxuser 
+```
 
 
+> Windows PowerShell模块放置在C:\Windows\System32\WindowsPowerShell\v1.0\Modules下,模块的文件夹名要和模块名一致，模块文件和模块描述文件要在一个文件夹内。
+> - 模块文件：以.psm1结尾
+> - 模块描述文件：以.psd1结尾，要和主模块文件文件名一致
 
 
 
