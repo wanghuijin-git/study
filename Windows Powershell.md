@@ -571,7 +571,7 @@ function set-jcxuser
 }
 ```
 - 模块文件：将函数另存为.psm1结尾的文件。
-- 模块描述文件
+- 模块描述文件：
     - 命令：New-ModuleManifest
     - -Path：模块存放路径
     - -Author：作者名
@@ -590,15 +590,34 @@ ModuleType Version    Name                                ExportedCommands
 Manifest   1.0        jcxuser                             set-jcxuser 
 ```
 
-
 > Windows PowerShell模块放置在C:\Windows\System32\WindowsPowerShell\v1.0\Modules下,模块的文件夹名要和模块名一致，模块文件和模块描述文件要在一个文件夹内。
 > - 模块文件：以.psm1结尾
 > - 模块描述文件：以.psd1结尾，要和主模块文件文件名一致
 
+### Desired State Configuration
+- 查看当前已经DscResource
+```
+PS C:\Users\Administrator> Get-DscResource
 
+ImplementedAs   Name                      Module                         Properties                                        
+-------------   ----                      ------                         ----------                                        
+Binary          File                                                     {DestinationPath, Attributes, Checksum, Content...
+PowerShell      Archive                   PSDesiredStateConfiguration    {Destination, Path, Checksum, DependsOn...}       
+PowerShell      Environment               PSDesiredStateConfiguration    {Name, DependsOn, Ensure, Path...}                
+PowerShell      Group                     PSDesiredStateConfiguration    {GroupName, Credential, DependsOn, Description...}
+Binary          Log                       PSDesiredStateConfiguration    {Message, DependsOn}                              
+PowerShell      Package                   PSDesiredStateConfiguration    {Name, Path, ProductId, Arguments...}             
+PowerShell      Registry                  PSDesiredStateConfiguration    {Key, ValueName, DependsOn, Ensure...}            
+PowerShell      Script                    PSDesiredStateConfiguration    {GetScript, SetScript, TestScript, Credential...} 
+PowerShell      Service                   PSDesiredStateConfiguration    {Name, BuiltInAccount, Credential, DependsOn...}  
+PowerShell      User                      PSDesiredStateConfiguration    {UserName, DependsOn, Description, Disabled...}   
+PowerShell      WindowsFeature            PSDesiredStateConfiguration    {Name, Credential, DependsOn, Ensure...}          
+PowerShell      WindowsProcess            PSDesiredStateConfiguration    {Arguments, Path, Credential, DependsOn...}
+```
 
+```
 
-
+```
 
 
 
