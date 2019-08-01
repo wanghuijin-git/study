@@ -595,33 +595,84 @@ Manifest   1.0        jcxuser                             set-jcxuser
 > - 模块描述文件：以.psd1结尾，要和主模块文件文件名一致
 
 ### Desired State Configuration
-- 查看当前已经DscResource
+- 查看系统当前已经有的DscResource
 ```
 PS C:\Users\Administrator> Get-DscResource
 
-ImplementedAs   Name                      Module                         Properties                                        
--------------   ----                      ------                         ----------                                        
+ImplementedAs   Name                      Module                         Properties
+-------------   ----                      ------                         ----------
 Binary          File                                                     {DestinationPath, Attributes, Checksum, Content...
 PowerShell      Archive                   PSDesiredStateConfiguration    {Destination, Path, Checksum, DependsOn...}       
 PowerShell      Environment               PSDesiredStateConfiguration    {Name, DependsOn, Ensure, Path...}                
 PowerShell      Group                     PSDesiredStateConfiguration    {GroupName, Credential, DependsOn, Description...}
-Binary          Log                       PSDesiredStateConfiguration    {Message, DependsOn}                              
+Binary          Log                       PSDesiredStateConfiguration    {Message, DependsOn}、
 PowerShell      Package                   PSDesiredStateConfiguration    {Name, Path, ProductId, Arguments...}             
 PowerShell      Registry                  PSDesiredStateConfiguration    {Key, ValueName, DependsOn, Ensure...}            
 PowerShell      Script                    PSDesiredStateConfiguration    {GetScript, SetScript, TestScript, Credential...} 
 PowerShell      Service                   PSDesiredStateConfiguration    {Name, BuiltInAccount, Credential, DependsOn...}  
-PowerShell      User                      PSDesiredStateConfiguration    {UserName, DependsOn, Description, Disabled...}   
-PowerShell      WindowsFeature            PSDesiredStateConfiguration    {Name, Credential, DependsOn, Ensure...}          
+PowerShell      User                      PSDesiredStateConfiguration    {UserName, DependsOn, Description, Disabled...}
+PowerShell      WindowsFeature            PSDesiredStateConfiguration    {Name, Credential, DependsOn, Ensure...}
 PowerShell      WindowsProcess            PSDesiredStateConfiguration    {Arguments, Path, Credential, DependsOn...}
 ```
-
+- 查看一个DscResoure所拥有的属性
 ```
-
+PS C:\Users\Administrator> (Get-DscResource -Name File).Properties
+Name                                     PropertyType                                                          IsMandatory Values                                  
+----                                     ------------                                                          ----------- ------                                  
+DestinationPath                          [string]                                                                     True {}                                      
+Attributes                               [string[]]                                                                  False {Archive, Hidden, ReadOnly, System}     
+Checksum                                 [string]                                                                    False {CreatedDate, ModifiedDate, SHA-1, SH...
+Contents                                 [string]                                                                    False {}                                      
+Credential                               [PSCredential]                                                              False {}                                      
+DependsOn                                [string[]]                                                                  False {}                                      
+Ensure                                   [string]                                                                    False {Absent, Present}                       
+Force                                    [bool]                                                                      False {}
+MatchSource                              [bool]                                                                      False {}                                      
+Recurse                                  [bool]                                                                      False {}                                      
+SourcePath                               [string]                                                                    False {}                                      
+Type                                     [string]                                                                    False {Directory, File}             
 ```
+***示例***
+```
+Configuration TouchFile
+{
+    param
+    (
+        [string[]]$computer
+    )
+    node $computer
+    {
+        File newfile
+        {
+           DestinationPath = "c:\123.html"
+           Contents = "123"
+           Type = "File"
+        }
+    }
+}
+```
+```
+PS C:\Users\Administrator> get-help TouchFile
+名称
+    TouchFile
+语法
+    TouchFile [[-InstanceName] <string>] [[-OutputPath] <string>] [[-ConfigurationData] <hashtable>] [[-computer] <string[]>]     
+别名
+    无
+备注
+    无
 
+PS C:\> TouchFile -computer 127.0.0.1
+    目录: C:\TouchFile
+Mode                LastWriteTime     Length Name
+----                -------------     ------ ----
+-a---          2019/8/1     21:39       1210 127.0.0.1.mof
 
-
-
+PS C:\> Start-DscConfiguration -Path C:\TouchFile
+Id     Name            PSJobTypeName   State         HasMoreData     Location             Command
+--     ----            -------------   -----         -----------     --------             -------
+16     Job16           Configuratio... Running       True            127.0.0.1,192.168... Start-DscConfiguration...
+```
 
 
 
