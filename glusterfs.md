@@ -260,7 +260,84 @@ Filesystem                    Size  Used Avail Use% Mounted on
 127.0.0.1:/gv1                 20G  334M   20G   2% /mnt    # 容量为3/4，相当于raid5
 ```
 
+## 磁盘存储的平衡
+平衡布局是很有必要的，因为布局结构是静态的，当新的 bricks 加入现有卷，新创建的文件会分布到旧的 bricks 中，所以需要平衡布局结构，使新加入的 bricks 生效。布局平衡只是使新布局生效，并不会在新的布局中移动老的数据，如果你想在新布局生效后，重新平衡卷中的数据，还需要对卷中的数据进行平衡。
+```
+# 创建一个分散卷
+[root@glusterfs1 ~]# gluster volume create gv1 disperse 3 glusterfs1:/data01 glusterfs2:/data01 glusterfs3:/data01 force   
+volume create: gv1: success: please start the volume to access data
+[root@glusterfs1 ~]# gluster volume start gv1
+volume start: gv1: success
+[root@glusterfs1 ~]# mount -t glusterfs 127.0.0.1:/gv1 /mnt
+# 创建三个10M的文件
+[root@glusterfs1 mnt]# dd if=/dev/zero bs=1024 count=10000 of=/mnt/10M-1.file
+10000+0 records in
+10000+0 records out
+10240000 bytes (10 MB) copied, 2.3449 s, 4.4 MB/s
+[root@glusterfs1 mnt]# dd if=/dev/zero bs=1024 count=10000 of=/mnt/10M-2.file
+10000+0 records in
+10000+0 records out
+10240000 bytes (10 MB) copied, 2.66975 s, 3.8 MB/s
+[root@glusterfs1 mnt]# dd if=/dev/zero bs=1024 count=10000 of=/mnt/10M-3.file
+10000+0 records in
+10000+0 records out
+10240000 bytes (10 MB) copied, 2.11298 s, 4.8 MB/s
 
+[root@glusterfs1 mnt]# ll -h /data01/
+total 15M
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-1.file
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-2.file
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-3.file
+
+[root@glusterfs2 ~]# ll -h /data01/
+total 15M
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-1.file
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-2.file
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-3.file
+
+[root@glusterfs3 ~]# ll -h /data01/
+total 15M
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-1.file
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-2.file
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-3.file
+
+# 新加三个盘进来做分布式分散卷
+[root@glusterfs1 /]# umount /mnt/
+[root@glusterfs1 ~]# gluster volume stop gv1
+Stopping volume will make its data inaccessible. Do you want to continue? (y/n) y
+volume stop: gv1: success
+[root@glusterfs1 ~]# gluster volume add-brick gv1 glusterfs1:/data02 glusterfs2:/data02 glusterfs3:/data02 force
+volume add-brick: success
+[root@glusterfs1 ~]# gluster volume start gv1 
+volume start: gv1: success
+[root@glusterfs1 ~]# mount -t glusterfs 127.0.0.1:/gv1 /mnt
+
+# 再创建三个文件
+[root@glusterfs1 ~]# dd if=/dev/zero bs=1024 count=10000 of=/mnt/10M-4.file
+10000+0 records in
+10000+0 records out
+10240000 bytes (10 MB) copied, 1.90685 s, 5.4 MB/s
+[root@glusterfs1 ~]# dd if=/dev/zero bs=1024 count=10000 of=/mnt/10M-5.file
+10000+0 records in
+10000+0 records out
+10240000 bytes (10 MB) copied, 1.99968 s, 5.1 MB/s
+[root@glusterfs1 ~]# dd if=/dev/zero bs=1024 count=10000 of=/mnt/10M-6.file
+10000+0 records in
+10000+0 records out
+10240000 bytes (10 MB) copied, 2.3427 s, 4.4 MB/s
+
+# 文件分布不均匀
+[root@glusterfs1 ~]# ll /data01/
+total 25000
+-rw-r--r-- 2 root root 5120000 Aug 19 17:27 10M-1.file
+-rw-r--r-- 2 root root 5120000 Aug 19 17:27 10M-2.file
+-rw-r--r-- 2 root root 5120000 Aug 19 17:27 10M-3.file
+-rw-r--r-- 2 root root 5120000 Aug 19 17:39 10M-4.file
+-rw-r--r-- 2 root root 5120000 Aug 19 17:40 10M-5.file
+[root@glusterfs1 ~]# ll /data02/
+total 5000
+-rw-r--r-- 2 root root 5120000 Aug 19 17:40 10M-6.file
+```
 
 
 
