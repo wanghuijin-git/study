@@ -260,7 +260,7 @@ Filesystem                    Size  Used Avail Use% Mounted on
 127.0.0.1:/gv1                 20G  334M   20G   2% /mnt    # 容量为3/4，相当于raid5
 ```
 
-## 磁盘存储的平衡
+### 磁盘存储的平衡
 平衡布局是很有必要的，因为布局结构是静态的，当新的 bricks 加入现有卷，新创建的文件会分布到旧的 bricks 中，所以需要平衡布局结构，使新加入的 bricks 生效。布局平衡只是使新布局生效，并不会在新的布局中移动老的数据，如果你想在新布局生效后，重新平衡卷中的数据，还需要对卷中的数据进行平衡。
 ```
 # 创建一个分散卷
@@ -337,7 +337,205 @@ total 25000
 [root@glusterfs1 ~]# ll /data02/
 total 5000
 -rw-r--r-- 2 root root 5120000 Aug 19 17:40 10M-6.file
+
+# 进行磁盘存储平衡
+[root@glusterfs1 ~]# gluster volume rebalance gv1 start
+volume rebalance: gv1: success: Rebalance on gv1 has been started successfully. Use rebalance status command to check status of the rebalance process.
+ID: 96dee621-7bab-49a2-9172-1ba5cef90311
+[root@glusterfs1 ~]# gluster volume rebalance gv1 status
+                                    Node Rebalanced-files          size       scanned      failures       skipped               status  run time in h:m:s
+                               ---------      -----------   -----------   -----------   -----------   -----------         ------------     --------------
+                              glusterfs2                0        0Bytes             6             0             0            completed        0:00:05
+                              glusterfs3                0        0Bytes             5             0             0            completed        0:00:05
+                               localhost                1         9.8MB             6             0             0            completed        0:00:05
+volume rebalance: gv1: success
+
+# 再次查看文件分布
+[root@glusterfs1 ~]# ll -h /data01/
+total 20M
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-1.file
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-3.file
+-rw-r--r-- 2 root root 4.9M Aug 19 17:39 10M-4.file
+-rw-r--r-- 2 root root 4.9M Aug 19 17:40 10M-5.file
+[root@glusterfs1 ~]# ll -h /data02/
+total 9.8M
+-rw-r--r-- 2 root root 4.9M Aug 19 17:27 10M-2.file
+-rw-r--r-- 2 root root 4.9M Aug 19 17:40 10M-6.file
+
+#从上面可以看出部分文件已经平衡到新加入的brick中了
 ```
+> 每做一次扩容后都需要做一次磁盘平衡。 磁盘平衡是在万不得已的情况下再做的，一般再创建一个卷就可以了。
+
+### 移除brick
+注意：当你移除 bricks 的时候，你在 gluster 的挂载点将不能继续访问数据，只有配置文件中的信息移除后你才能继续访问 bricks 中的数据。当移除分布式复制卷或者分布式条带卷的时候，移除的 bricks 数目必须是 replica 或者 disperse 的倍数。
+```
+# 卷原有信息
+[root@glusterfs1 ~]# gluster volume info 
+Volume Name: gv1
+Type: Distributed-Disperse
+Volume ID: d01bb6ad-fcc9-4051-a17a-6bef21f52440
+Status: Started
+Snapshot Count: 0
+Number of Bricks: 2 x (2 + 1) = 6
+Transport-type: tcp
+Bricks:
+Brick1: glusterfs1:/data01
+Brick2: glusterfs2:/data01
+Brick3: glusterfs3:/data01
+Brick4: glusterfs1:/data02
+Brick5: glusterfs2:/data02
+Brick6: glusterfs3:/data02
+Options Reconfigured:
+transport.address-family: inet
+nfs.disable: on
+
+[root@glusterfs1 ~]# gluster volume stop gv1
+Stopping volume will make its data inaccessible. Do you want to continue? (y/n) y
+volume stop: gv1: success
+
+# 移除brick
+[root@glusterfs1 ~]# gluster volume remove-brick gv1 glusterfs1:/data01 glusterfs2:/data01 glusterfs3:/data01 force
+Remove-brick force will not migrate files from the removed bricks, so they will no longer be available on the volume.
+Do you want to continue? (y/n) y
+volume remove-brick commit force: success
+
+# 移除后卷信息
+[root@glusterfs1 ~]# gluster volume info 
+Volume Name: gv1
+Type: Disperse
+Volume ID: d01bb6ad-fcc9-4051-a17a-6bef21f52440
+Status: Stopped
+Snapshot Count: 0
+Number of Bricks: 1 x (2 + 1) = 3
+Transport-type: tcp
+Bricks:
+Brick1: glusterfs1:/data02
+Brick2: glusterfs2:/data02
+Brick3: glusterfs3:/data02
+Options Reconfigured:
+performance.client-io-threads: on
+transport.address-family: inet
+nfs.disable: on
+
+[root@glusterfs1 ~]# gluster volume start gv1 
+volume start: gv1: success
+[root@glusterfs1 ~]# mount -t glusterfs 127.0.0.1:/gv1 /mnt
+[root@glusterfs1 ~]# ll /mnt/
+total 20000
+-rw-r--r-- 1 root root 10240000 Aug 19 17:27 10M-2.file
+-rw-r--r-- 1 root root 10240000 Aug 19 17:40 10M-6.file
+```
+### 删除卷
+```
+[root@glusterfs1 ~]# umount /mnt/
+[root@glusterfs1 ~]# gluster volume stop gv1
+Stopping volume will make its data inaccessible. Do you want to continue? (y/n) y
+volume stop: gv1: success
+[root@glusterfs1 ~]# gluster volume delete gv1
+Deleting volume will erase all information about the volume. Do you want to continue? (y/n) y
+volume delete: gv1: success
+
+# 文件还在
+[root@glusterfs1 ~]# ll /data01/
+total 20000
+-rw-r--r-- 2 root root 5120000 Aug 19 17:27 10M-1.file
+-rw-r--r-- 2 root root 5120000 Aug 19 17:27 10M-3.file
+-rw-r--r-- 2 root root 5120000 Aug 19 17:39 10M-4.file
+-rw-r--r-- 2 root root 5120000 Aug 19 17:40 10M-5.file
+[root@glusterfs1 ~]# ll /data02/
+total 10000
+-rw-r--r-- 2 root root 5120000 Aug 19 17:27 10M-2.file
+-rw-r--r-- 2 root root 5120000 Aug 19 17:40 10M-6.file
+
+```
+## glusterfs文件系统优化
+参数项目 | 说明 | 缺省值 | 合法值
+-|-|-|-|-
+Auth_allow | IP访问授权 | *.allow all | Ip地址
+Cluster.min-free-disk | 剩余磁盘空间阀值 | 10% | 百分比
+Cluster.stripe-block-size | 条带大小 | 128KB | 字节
+Network.frame-timeout | 请求等待时间 | 1800s | 1-1800
+Network.ping-timeout | 客户端等待时间 | 42s | 0-42
+Nfs.disabled | 关闭NFS服务 | Off | Off\on
+Performance.io-thread-count | IO线程数 | 16 | 0-65
+Performance.cache-refresh-timeout | 缓存校验时间 | 1s | 0-61
+Performance.cache-size | 读缓存大小 | 32MB | 字节
+
+- Performance.quick-read: #优化读取小文件的性能
+- Performance.read-ahead: #用预读的方式提高读取的性能，有利于应用频繁持续性的访问文件，当应用完成当前数据块读取的时候，下一个数据块就已经准备好了。
+- Performance.write-behind: #先写入缓存内，在写入硬盘，以提高写入的性能。
+- Performance.io-cache: #缓存已经被读过的。
+### 优化参数调整方式
+- 命令格式：
+    - gluster.volume set <卷><参数>
+
+- 打开预读方式访问存储
+```
+[root@glusterfs1 ~]# gluster volume set gv1 performance.read-ahead on
+volume set: success
+```
+- 调整读取缓存的大小
+```
+[root@glusterfs1 ~]# gluster volume set gv1 performance.cache-size 256MB
+volume set: success
+```
+- 查看具体有哪些参数可以优化
+```
+[root@glusterfs1 ~]# gluster volume set help
+```
+## 监控及日常维护
+使用zabbix自带的模板即可，CPU、内存、磁盘空间、主机运行时间、系统load。日常情况要查看服务器监控值，遇到报警要及时处理。
+```
+# 看下节点有没有在线
+gluster volume status nfsp
+
+# 启动完全修复
+gluster volume heal gv1 full
+
+# 查看需要修复的文件
+gluster volume heal gv1 info
+
+# 查看修复成功的文件
+gluster volume heal gv1 info healed
+
+# 查看修复失败的文件
+gluster volume heal gv1 heal-failed
+
+# 查看主机的状态
+gluster peer status
+
+# 查看脑裂的文件
+gluster volume heal gv1 info split-brain
+
+# 激活quota功能
+gluster volume quota gv1 enable
+
+# 关闭quota功能
+gulster volume quota gv1 disable
+
+# 目录限制（卷中文件夹的大小）
+gluster volume quota limit-usage /data/30MB --/gv1/data
+
+# quota信息列表
+gluster volume quota gv1 list
+
+# 限制目录的quota信息
+gluster volume quota gv1 list /data
+
+# 设置信息的超时时间
+gluster volume set gv1 features.quota-timeout 5
+
+# 删除某个目录的quota设置
+gluster volume quota gv1 remove /data
+
+备注：quota功能，主要是对挂载点下的某个目录进行空间限额。如：/mnt/gulster/data目录，而不是对组成卷组的空间进行限制。
+```
+
+
+
+
+
+
 
 
 
