@@ -531,12 +531,106 @@ gluster volume quota gv1 remove /data
 备注：quota功能，主要是对挂载点下的某个目录进行空间限额。如：/mnt/gulster/data目录，而不是对组成卷组的空间进行限制。
 ```
 
+## 模拟故障
+### 模拟硬盘故障
+```
+[root@glusterfs1 ~]# gluster volume create gv1 replica 2 glusterfs1:/data01 glusterfs2:/data02 force
+volume create: gv1: success: please start the volume to access data
+[root@glusterfs1 ~]# gluster volume start gv1
+volume start: gv1: success
+[root@glusterfs1 ~]# mount -t glusterfs 127.0.0.1:/gv1 /mnt
+[root@glusterfs1 ~]# ll -h /mnt/
+total 20M
+-rw-r--r-- 1 root root 9.8M Aug 20 15:34 10M-1.file
+-rw-r--r-- 1 root root 9.8M Aug 20 15:34 10M-2.file
+
+#删除一块盘再加入一块盘
+[root@glusterfs1 ~]# gluster volume status
+Status of volume: gv1
+Gluster process                             TCP Port  RDMA Port  Online  Pid
+------------------------------------------------------------------------------
+Brick glusterfs1:/data01                    49152     0          Y       1603 
+Brick glusterfs2:/data02                    49152     0          Y       1455 
+Self-heal Daemon on localhost               N/A       N/A        Y       1624 
+Self-heal Daemon on glusterfs2              N/A       N/A        Y       1476 
+Self-heal Daemon on glusterfs3              N/A       N/A        Y       1456 
+Task Status of Volume gv1
+------------------------------------------------------------------------------
+There are no active volume tasks
+ 
+[root@glusterfs1 ~]# kill -15 1603
+[root@glusterfs1 ~]# gluster volume status
+Status of volume: gv1
+Gluster process                             TCP Port  RDMA Port  Online  Pid
+------------------------------------------------------------------------------
+Brick glusterfs1:/data01                    N/A       N/A        N       N/A  
+Brick glusterfs2:/data02                    49152     0          Y       1455 
+Self-heal Daemon on localhost               N/A       N/A        Y       1624 
+Self-heal Daemon on glusterfs3              N/A       N/A        Y       1456 
+Self-heal Daemon on glusterfs2              N/A       N/A        Y       1476 
+Task Status of Volume gv1
+------------------------------------------------------------------------------
+There are no active volume tasks
+
+[root@glusterfs1 ~]# mkfs.xfs /dev/sdb
+meta-data=/dev/sdb               isize=512    agcount=4, agsize=327680 blks
+         =                       sectsz=512   attr=2, projid32bit=1
+         =                       crc=1        finobt=0, sparse=0
+data     =                       bsize=4096   blocks=1310720, imaxpct=25
+         =                       sunit=0      swidth=0 blks
+naming   =version 2              bsize=4096   ascii-ci=0 ftype=1
+log      =internal log           bsize=4096   blocks=2560, version=2
+         =                       sectsz=512   sunit=0 blks, lazy-count=1
+realtime =none                   extsz=4096   blocks=0, rtextents=0
+[root@glusterfs1 ~]# mount /dev/sdb /data01/
+[root@glusterfs1 ~]# ll /data01/
+total 0
+
+
+[root@glusterfs2 ~]# mkdir /mnt/1
+[root@glusterfs2 ~]# rmdir /mnt/1
+[root@glusterfs2 ~]# setfattr -n trusted.non-existent-key -v abc /mnt
+[root@glusterfs2 ~]# setfattr -x trusted.non-existent-key  /mnt
+[root@glusterfs2 ~]# getfattr -d -m. -e hex /data02/
+getfattr: Removing leading '/' from absolute path names
+# file: data02/
+trusted.afr.dirty=0x000000000000000000000000
+trusted.afr.gv1-client-0=0x000000000000000200000002
+trusted.gfid=0x00000000000000000000000000000001
+trusted.glusterfs.mdata=0x010000000000000000000000005d5bacd80000000014243216000000005d5baccb000000000bfc4c3a00000000000000000000000000000000
+trusted.glusterfs.volume-id=0xc888433b65fe443f9d0ef91b9a0f7b72
+
+[root@glusterfs1 ~]# gluster volume heal gv1 info
+Brick glusterfs1:/data01
+Status: Transport endpoint is not connected
+Number of entries: -
+
+Brick glusterfs2:/data02
+/ 
+Status: Connected
+Number of entries: 1
+
+[root@glusterfs1 ~]# gluster volume replace-brick gv1 glusterfs1:/data01 glusterfs1:/data02 commit force
+volume replace-brick: success: replace-brick commit force operation successful
+
+[root@glusterfs1 ~]# gluster volume status
+Status of volume: gv1
+Gluster process                             TCP Port  RDMA Port  Online  Pid
+------------------------------------------------------------------------------
+Brick glusterfs1:/data02                    49152     0          Y       1855 
+Brick glusterfs2:/data02                    49152     0          Y       1455 
+Self-heal Daemon on localhost               N/A       N/A        Y       1865 
+Self-heal Daemon on glusterfs3              N/A       N/A        Y       1517 
+Self-heal Daemon on glusterfs2              N/A       N/A        Y       1765 
+ 
+Task Status of Volume gv1
+------------------------------------------------------------------------------
+There are no active volume tasks
 
 
 
 
-
-
+```
 
 
 
