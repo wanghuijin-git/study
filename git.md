@@ -9,7 +9,7 @@
 从源码安装 Git，需要安装 Git 依赖的库：curl、zlib、openssl、expat，还有libiconv。
 [root@manager ~]# yum install curl-devel expat-devel gettext-devel openssl-devel zlib-devel -y
 为了能够添加更多格式的文档（如 doc, html, info），安装以下的依赖包：
-[root@manager packages]# yum install asciidoc xmlto docbook2x -y
+[root@manager packages]# yum install asciidoc xmlto docbook2X -y
 
 通过源码包安装
 [root@manager ~]# cd /packages/packages/
@@ -188,13 +188,16 @@ Fast-forward
  create mode 100644 licai.html
 ```
 ### 高级管理
+```
 git reset
            --soft 缓存区和工作目录都不会改变
            --mixed 默认选项，缓存区和你指定的提交同步，但工作目录不受影响
            --hard 缓存区和工作目录都同步到你指定的提交
 git reflog
+```
+
 ### 远程管理
-https://images2015.cnblogs.com/blog/801940/201607/801940-20160710190318077-864971403.png
+![远程管理](https://images2015.cnblogs.com/blog/801940/201607/801940-20160710190318077-864971403.png)
 ```
 git clone https://github.com/jichengxi/learning.git
 git pull
@@ -214,7 +217,7 @@ gitlab安装教程：https://about.gitlab.com/install/#centos-7
 清华大学镜像源：https://mirror.tuna.tsinghua.edu.cn/gitlab-ce/yum/el7/
 ```
 安装依赖包
-[root@gitlab ~]# yum install -y curl policycoreutils-python openssh-server -y
+[root@gitlab ~]# yum install curl policycoreutils-python openssh-server -y
 [root@gitlab ~]# systemctl enable sshd
 [root@gitlab ~]# systemctl start sshd
 [root@gitlab ~]# yum install postfix -y
@@ -258,10 +261,93 @@ external_url 'http://192.168.1.51/gitlab'
 - /etc/gitlab：配置文件目录
 - /var/log/gitlab：此目录下存放了gitlab各个组件产生的日志
 - /var/opt/gitlab/backups/：备份文件生成的目录
+### 变更主配置文件
+需要以下操作：
+- gitlab-ctl reconfigure - 重置配置文件
+- gitlab-ctl show-config - 验证配置文件
+- gitlab-ctl restart - 重启gitlab服务
 
+## gitlab备份恢复
+### 备份
+```
+# 更改配置文件
+[root@gitlab ~]# mkdir /data/backups/gitlab -p
+[root@gitlab ~]# vim /etc/gitlab/gitlab.rb 
+gitlab_rails['backup_path'] = "/data/backups/gitlab"  # 备份存放目录
+gitlab_rails['backup_keep_time'] = 604800   # 备份文件存放时间(7天)
+[root@gitlab ~]# gitlab-ctl reconfigure
+[root@gitlab ~]# gitlab-ctl restart
 
+# 手动备份
+[root@gitlab ~]# gitlab-rake gitlab:backup:create
 
+[root@gitlab ~]# ll /data/backups/gitlab/
+total 100
+-rw------- 1 git git 102400 Sep  2 01:36 1567359414_2019_09_02_11.9.9_gitlab_backup.tar
+```
+### 恢复
+```
+[root@gitlab ~]# gitlab-ctl status
+run: alertmanager: (pid 14949) 275s; run: log: (pid 1437) 7309s
+run: gitaly: (pid 14963) 275s; run: log: (pid 1415) 7309s
+run: gitlab-monitor: (pid 14973) 274s; run: log: (pid 1432) 7309s
+run: gitlab-workhorse: (pid 14976) 274s; run: log: (pid 1428) 7309s
+run: logrotate: (pid 14989) 273s; run: log: (pid 1440) 7309s
+run: nginx: (pid 14996) 273s; run: log: (pid 1434) 7309s
+run: node-exporter: (pid 15012) 273s; run: log: (pid 1430) 7309s
+run: postgres-exporter: (pid 15022) 272s; run: log: (pid 1435) 7309s
+run: postgresql: (pid 15035) 271s; run: log: (pid 1436) 7309s
+run: prometheus: (pid 15039) 271s; run: log: (pid 1438) 7309s
+run: redis: (pid 15052) 271s; run: log: (pid 1418) 7309s
+run: redis-exporter: (pid 15060) 270s; run: log: (pid 1439) 7309s
+run: sidekiq: (pid 15065) 269s; run: log: (pid 1426) 7309s
+run: unicorn: (pid 15237) 255s; run: log: (pid 1424) 7309s
 
+# 停止数据写入服务
+[root@gitlab ~]# gitlab-ctl stop unicorn
+ok: down: unicorn: 0s, normally up
+[root@gitlab ~]# gitlab-ctl stop sidekiq
+ok: down: sidekiq: 1s, normally up
+
+# 手动恢复
+[root@gitlab ~]# ll /data/backups/gitlab/
+total 100
+-rw------- 1 git git 102400 Sep  2 01:36 1567359414_2019_09_02_11.9.9_gitlab_backup.tar
+[root@gitlab ~]# gitlab-rake gitlab:backup:restore BACKUP=1567359414_2019_09_02_11.9.9
+
+[root@gitlab ~]# gitlab-ctl restart
+ok: run: alertmanager: (pid 16215) 1s
+ok: run: gitaly: (pid 16224) 0s
+ok: run: gitlab-monitor: (pid 16235) 1s
+ok: run: gitlab-workhorse: (pid 16246) 0s
+ok: run: logrotate: (pid 16254) 0s
+ok: run: nginx: (pid 16263) 1s
+ok: run: node-exporter: (pid 16272) 0s
+ok: run: postgres-exporter: (pid 16276) 1s
+ok: run: postgresql: (pid 16284) 0s
+ok: run: prometheus: (pid 16286) 1s
+ok: run: redis: (pid 16299) 0s
+ok: run: redis-exporter: (pid 16303) 1s
+ok: run: sidekiq: (pid 16384) 0s
+ok: run: unicorn: (pid 16392) 1s
+```
+
+## 邮箱配置
+```
+[root@gitlab ~]# vim /etc/gitlab/gitlab.rb
+# 按照自己的需求改
+gitlab_rails['time_zone'] = 'Aisa/Shanghai'
+gitlab_rails['gitlab_email_enabled'] = true
+gitlab_rails['gitlab_email_from'] = 'example@example.com'
+gitlab_rails['gitlab_email_display_name'] = 'Example'
+gitlab_rails['smtp_enable'] = true
+gitlab_rails['smtp_address'] = "smtp.server"
+gitlab_rails['smtp_port'] = 465
+gitlab_rails['smtp_user_name'] = "smtp user"
+gitlab_rails['smtp_password'] = "smtp password"
+gitlab_rails['smtp_domain'] = "example.com"
+gitlab_rails['smtp_authentication'] = "login"
+```
 
 
 
