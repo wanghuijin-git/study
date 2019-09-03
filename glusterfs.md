@@ -483,7 +483,7 @@ volume set: success
 ```
 [root@glusterfs1 ~]# gluster volume set help
 ```
-## 监控及日常维护
+### 监控及日常维护
 使用zabbix自带的模板即可，CPU、内存、磁盘空间、主机运行时间、系统load。日常情况要查看服务器监控值，遇到报警要及时处理。
 ```
 # 看下节点有没有在线
@@ -534,11 +534,13 @@ gluster volume quota gv1 remove /data
 ## 模拟故障
 ### 模拟硬盘故障
 ```
+# 新建一个gv1
 [root@glusterfs1 ~]# gluster volume create gv1 replica 2 glusterfs1:/data01 glusterfs2:/data02 force
 volume create: gv1: success: please start the volume to access data
 [root@glusterfs1 ~]# gluster volume start gv1
 volume start: gv1: success
 [root@glusterfs1 ~]# mount -t glusterfs 127.0.0.1:/gv1 /mnt
+# 写入数据
 [root@glusterfs1 ~]# ll -h /mnt/
 total 20M
 -rw-r--r-- 1 root root 9.8M Aug 20 15:34 10M-1.file
@@ -557,7 +559,8 @@ Self-heal Daemon on glusterfs3              N/A       N/A        Y       1456
 Task Status of Volume gv1
 ------------------------------------------------------------------------------
 There are no active volume tasks
- 
+
+# 杀掉原有的进程
 [root@glusterfs1 ~]# kill -15 1603
 [root@glusterfs1 ~]# gluster volume status
 Status of volume: gv1
@@ -586,11 +589,12 @@ realtime =none                   extsz=4096   blocks=0, rtextents=0
 [root@glusterfs1 ~]# ll /data01/
 total 0
 
-
+# 在挂载点上创建一个尚不存在的目录，然后删除该目录，通过执行setfattr对元数据更改日志执行相同操作，触发自愈
 [root@glusterfs2 ~]# mkdir /mnt/1
 [root@glusterfs2 ~]# rmdir /mnt/1
 [root@glusterfs2 ~]# setfattr -n trusted.non-existent-key -v abc /mnt
 [root@glusterfs2 ~]# setfattr -x trusted.non-existent-key  /mnt
+# 查看目录属性
 [root@glusterfs2 ~]# getfattr -d -m. -e hex /data02/
 getfattr: Removing leading '/' from absolute path names
 # file: data02/
@@ -609,7 +613,7 @@ Brick glusterfs2:/data02
 / 
 Status: Connected
 Number of entries: 1
-
+# 将新的节点/data02替换/data01
 [root@glusterfs1 ~]# gluster volume replace-brick gv1 glusterfs1:/data01 glusterfs1:/data02 commit force
 volume replace-brick: success: replace-brick commit force operation successful
 
@@ -622,15 +626,74 @@ Brick glusterfs2:/data02                    49152     0          Y       1455
 Self-heal Daemon on localhost               N/A       N/A        Y       1865 
 Self-heal Daemon on glusterfs3              N/A       N/A        Y       1517 
 Self-heal Daemon on glusterfs2              N/A       N/A        Y       1765 
- 
 Task Status of Volume gv1
 ------------------------------------------------------------------------------
 There are no active volume tasks
 
+[root@glusterfs1 ~]# getfattr -d -m. -e hex /data02/
+getfattr: Removing leading '/' from absolute path names
+# file: data02/
+trusted.afr.dirty=0x000000000000000000000000
+trusted.gfid=0x00000000000000000000000000000001
+trusted.glusterfs.mdata=0x010000000000000000000000005d5bacd80000000014243216000000005d5baccb000000000bfc4c3a00000000000000000000000000000000
+trusted.glusterfs.volume-id=0xc888433b65fe443f9d0ef91b9a0f7b72
 
+# 同步完成，查看文件是否已同步过来
+[root@glusterfs1 ~]# ll /data02/
+total 20000
+-rw-r--r-- 2 root root 10240000 Aug 20 15:34 10M-1.file
+-rw-r--r-- 2 root root 10240000 Aug 20 15:34 10M-2.file
+[root@glusterfs1 ~]# gluster volume heal gv1 info
+Brick glusterfs1:/data02
+Status: Connected
+Number of entries: 0
 
-
+Brick glusterfs2:/data02
+Status: Connected
+Number of entries: 0
 ```
+### 模拟主机故障
+- 物理故障
+    - 同时有多块硬盘故障，数据丢失
+    - 系统损坏不可修复
+找一台完全一样的机器，至少要保证硬盘数量和大小一致，安装系统，配置和故障机同样的IP，安装 gluster 软件，保证配置一样，在其他健康节点上执行命令 gluster peer status，查看故障服务器的 uuid
+```
+# 在其他机器上查看glusterfs1的uuid
+[root@glusterfs2 ~]# gluster peer status
+Number of Peers: 2
 
+Hostname: glusterfs1
+Uuid: c2ee8d16-04c7-48d9-a0cb-f6bdd3f96b2c
+State: Peer in Cluster (Connected)
 
+Hostname: glusterfs3
+Uuid: a500fa96-c84a-42f7-802f-3b9b29887f3d
+State: Peer in Cluster (Connected)
+# 更改uuid
+[root@glusterfs1 ~]# cat /var/lib/glusterd/glusterd.info 
+UUID=c2ee8d16-04c7-48d9-a0cb-f6bdd3f96b2c   # 修改成原来的uuid
+operating-version=60000
 
+# 在信任存储池中任意节点执行，就会自动开始同步，但在同步的时候会影响整个系统的性能
+[root@glusterfs2 ~]# gluster volume heal gv1 full
+Launching heal operation to perform full self heal on volume gv1 has been successful 
+Use heal info commands to check status.
+
+# 可以查看状态
+[root@glusterfs2 ~]# gluster volume heal gv1 info
+Brick glusterfs1:/data02
+Status: Connected
+Number of entries: 0
+
+Brick glusterfs2:/data02
+Status: Connected
+Number of entries: 0
+```
+## glusterFS在企业中应用场景
+理论和实践分析，GlusterFS目前主要使用大文件存储场景，对于小文件尤其是海量小文件，存储效率和访问性能都表现不佳，海量小文件LOSF问题是工业界和学术界的人工难题，GlusterFS作为通用的分布式文件系统，并没有对小文件额外的优化措施，性能不好也是可以理解的。
+- Media
+    - 文档、图片、音频、视频
+- *Shared storage　　
+    - 云存储、虚拟化存储、HPC（高性能计算）
+- *Big data
+    - 日志文件、RFID（射频识别）数据
