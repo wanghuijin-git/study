@@ -208,7 +208,17 @@ skipped, since fstab exists
 - fstype：文件系统的类型
 - opts：传递给mkfs命令的选项
 - force：在一个已有文件系统的设备上强制创建
-
+### mount
+配置挂载点
+- fstype：必选参数，挂载文件的类型
+- name：必选参数，挂载点
+- src：必选参数，要挂载的文件
+- state：必选参数
+- 	- present：只处理fstab中的配置
+- 	- absent：删除挂载点
+- 	- mounted：自动创建挂载点并挂载
+- 	- umounted：卸载
+- opts：传递给mount命令的参数
 ### yum
 在远程主机上通过 yum 源管理软件包
 - name：必须参数，用于指定需要管理的软件包，比如 nginx
@@ -224,8 +234,8 @@ skipped, since fstab exists
 - group：此参数用于指定用户所在的基本组
 - gourps：此参数用于指定用户所在的附加组。注意，如果说用户已经存在并且已经拥有多个附加组，那么- 如果想要继续添加新的附加组，需要结合 append 参数使用，否则在默认情况下，当再次使用 groups 参- 数设置附加组时，用户原来的附加组会被覆盖
 - append：如果用户原本就存在多个附加组，那么当使用 groups 参数设置附加组时，当前设置会覆盖原来的附加组设置，如果不想覆盖原来的附加组设置，需要结合 append 参数，将 append 设置为 yes，表示追加附加组到现有的附加组设置，append 默认值为 no。
-- shell参数：此参数用于指定用户的默认 shell
-- uid参数：此参数用于指定用户的 uid 号
+- shell：此参数用于指定用户的默认 shell
+- uid：此参数用于指定用户的 uid 号
 - expires：此参数用于指定用户的过期时间
 - comment：此参数用于指定用户的注释信息
 - state：此参数用于指定用户是否存在于远程主机中，可选值有 present、absent，默认值为 present，- 表示用户需要存在，当设置为 absent 时表示删除用户
@@ -234,6 +244,90 @@ skipped, since fstab exists
     ```
     import crypt; crypt.crypt('your_password')
     ```
+- update_password：此参数有两个值可选，always 和 on_create
+- generate_ssh_key：此参数默认值为 no，如果设置为 yes，表示为对应的用户生成 ssh 密钥对
+- ssh_key_file：当 generate_ssh_key 参数的值为 yes 时，使用此参数自定义生成 ssh 私钥的路径和名称
+- ssh_key_passphrase：当 generate_ssh_key 参数的值为 yes 时，在创建证书时，使用此参数设置私钥的密码
+- ssh_key_type：当 generate_ssh_key 参数的值为 yes 时，在创建证书时，使用此参数设置密钥对的类型。默认密钥类型为 rsa
+```
+[root@manager ~]# ansible -i ip nginx -m user -a "name=test groups=root uid=2000 expires=99999"
+192.168.11.2 | CHANGED => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python"
+    }, 
+    "changed": true, 
+    "comment": "", 
+    "create_home": true, 
+    "group": 2000, 
+    "groups": "root", 
+    "home": "/home/test", 
+    "name": "test", 
+    "shell": "/bin/bash", 
+    "state": "present", 
+    "system": false, 
+    "uid": 2000
+}
+
+[root@manager ~]# ansible -i ip nginx -m user -a "name=test state=absent remove=yes"
+192.168.11.2 | CHANGED => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python"
+    }, 
+    "changed": true, 
+    "force": false, 
+    "name": "test", 
+    "remove": true, 
+    "state": "absent"
+}
+```
+### group
+管理远程主机上的组
+- name：必须参数，用于指定要操作的组名称
+- state：用于指定组的状态，两个值可选，present，absent，默认为 present，设置为absent 表示删除- 组
+- gid：用于指定组的gid
+### synchronize
+用于目录、文件的同步，主要基于rsync命令工具同步目录和文件
+- compress：开启压缩，默认为开启
+- archive：是否采用归档模式同步，保证源文件和目标文件属性一致
+- checksum：是否效验
+- dirs：以非递归的方式传送目录
+- links：同步链接文件
+- recursive：是否递归yes/no
+- rsync_opts：使用rsync的参数
+- copy_links：同步的时候是否复制链接
+- delete：是否删除源中没有但目标存在的文件，使两边内容一样，以推送方为主
+- src：源目录及文件
+- dest：目标文件及目录
+- dest_port：目标接收的端口
+- rsync_path：服务的路径，指定rsync在远程服务器上执行
+- rsync_remote_user：设置远程用户名
+- –exclude=.log：忽略同步以.log结尾的文件，这个可以自定义忽略什么格式的文件，或者.txt等等都可以，但是由于这个是rsync命令的参- 数，所以必须和rsync_opts一起使用，比如rsync_opts=--exclude=.txt这种模式
+- mode：同步的模式，rsync同步的方式push、pull，默认是推送push，从本机推送给远程主机，pull表示从远程主机上拿文件
+```
+[root@manager ~]# ansible -i ip nginx -m synchronize -a "archive=yes recursive=yes src=/tmp/ dest=/tmp/ delete=yes"
+192.168.11.2 | CHANGED => {
+    "changed": true, 
+    "cmd": "/usr/bin/rsync --delay-updates -F --compress --delete-after --archive --rsh=/usr/bin/ssh -S none -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null --out-format=<<CHANGED>>%i %n%L /tmp/ 192.168.11.2:/tmp/", 
+    "rc": 0, 
+    "stdout_lines": [
+        ".d..t...... ./", 
+        "<f+++++++++ 1", 
+        "<f+++++++++ 2", 
+        ".d..t...... .ICE-unix/", 
+        ".d..t...... .Test-unix/", 
+        ".d..t...... .X11-unix/", 
+        ...(省略)
+    ]
+}
+```
+
+
+
+
+
+
+
+
 
 
 
