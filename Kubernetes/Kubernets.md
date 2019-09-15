@@ -70,7 +70,7 @@ kube-scheduler 监视新创建没有分配到Node的Pod，为Pod选择一个Node
 - kube-ui  
 kube-ui 提供集群状态基础信息查看。
 
-- 容器资源监测
+- 容器资源监测  
 容器资源监控提供一个UI浏览监控数据。
 
 - Cluster-level Logging  
@@ -269,7 +269,7 @@ Kubernetes 垃圾收集器的角色是删除指定的对象，这些对象曾经
     - kube-apiserver
     - kube-controller-manager
     - kube-scheduler
-### 安装 Etcd
+### 部署 Etcd
 #### 创建集群 CA 与 Certificates
 ```
 [root@dockerm1 ~]# mkdir /tools/kubernetes/{bin,config,ssl} -p
@@ -277,7 +277,1001 @@ Kubernetes 垃圾收集器的角色是删除指定的对象，这些对象曾经
 [root@dockerm1 ~]# wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64 -O  /tools/kubernetes/bin/cfssl
 [root@dockerm1 ~]# wget https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64 -O  /tools/kubernetes/bin/cfssljson
 [root@dockerm1 ~]# wget https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64 -O  /tools/kubernetes/bin/cfssl-certinfo
+[root@dockerm1 ]# echo "export PATH=$PATH:/tools/kubernetes/bin/" >> /etc/profile
+[root@dockerm1 ]# source /etc/profile
+[root@dockerm1 ]# cd /tools/kubernetes/ssl/
 
+# 创建 etcd和kubernetes CA 证书
+[root@dockerm1 ssl]# cfssl print-defaults config > ca-config.json
+[root@dockerm1 ssl]# cfssl print-defaults csr > ca-csr.json
+[root@dockerm1 ssl]# cfssl print-defaults csr > server-csr.json
+[root@dockerm1 ssl]# cat ca-config.json 
+{
+  "signing": {
+    "default": {
+      "expiry": "87600h"
+    },
+    "profiles": {
+      "kubernetes": {
+         "expiry": "87600h",
+         "usages": [
+            "signing",
+            "key encipherment",
+            "server auth",
+            "client auth"
+        ]
+      }
+    }
+  }
+}
+
+[root@dockerm1 ssl]# cat ca-csr.json 
+{
+    "CN": "kubernetes",
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C": "CN",
+            "L": "Shanghai",
+            "ST": "Shanghai"
+        }
+    ]
+}
+
+[root@dockerm1 ssl]# cat server-csr.json 
+{
+    "CN": "etcd",
+    "hosts": [
+    "127.0.0.1",
+    "192.168.1.35",
+    "192.168.1.31",
+    "192.168.1.32",
+    "dockerm1",
+    "docker1",
+    "docker2",
+    "kubernetes",
+    "kubernetes.default",
+    "kubernetes.default.svc",
+    "kubernetes.default.svc.cluster",
+    "kubernetes.default.svc.cluster.local"
+    ],
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C": "CN",
+            "L": "Shanghai",
+            "ST": "Shanghai"，
+            "O": "k8s",
+            "OU": "System"
+        }
+    ]
+}
+
+[root@dockerm1 ssl]# cfssl gencert -initca ca-csr.json | cfssljson -bare ca -
+2019/09/07 10:34:58 [INFO] generating a new CA key and certificate from CSR
+2019/09/07 10:34:58 [INFO] generate received request
+2019/09/07 10:34:58 [INFO] received CSR
+2019/09/07 10:34:58 [INFO] generating key: rsa-2048
+2019/09/07 10:34:58 [INFO] encoded CSR
+2019/09/07 10:34:58 [INFO] signed certificate with serial number 87988083519067223218684933522101970528950574111
+
+[root@dockerm1 ssl]# cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes server-csr.json | cfssljson -bare server
+2019/09/07 10:41:15 [INFO] generate received request
+2019/09/07 10:41:15 [INFO] received CSR
+2019/09/07 10:41:15 [INFO] generating key: rsa-2048
+2019/09/07 10:41:15 [INFO] encoded CSR
+2019/09/07 10:41:15 [INFO] signed certificate with serial number 593487504404727640714185272564436409444430737690
+2019/09/07 10:41:15 [WARNING] This certificate lacks a "hosts" field. This makes it unsuitable for
+websites. For more information see the Baseline Requirements for the Issuance and Management
+of Publicly-Trusted Certificates, v.1.1.6, from the CA/Browser Forum (https://cabforum.org);
+specifically, section 10.2.3 ("Information Requirements").
+
+# 创建 Kubernetes Proxy 证书
+[root@dockerm1 ssl]# cfssl print-defaults csr > kube-proxy-csr.json
+
+[root@dockerm1 ssl]# cat kube-proxy-csr.json 
+{
+  "CN": "system:kube-proxy",
+  "hosts": [],
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "L": "Shanghai",
+      "ST": "Shanghai",
+      "O": "k8s",
+      "OU": "System"
+    }
+  ]
+}
+
+[root@dockerm1 ssl]# cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=www kube-proxy-csr.json | cfssljson -bare kube-proxy
+2019/09/07 10:49:37 [INFO] generate received request
+2019/09/07 10:49:37 [INFO] received CSR
+2019/09/07 10:49:37 [INFO] generating key: rsa-2048
+2019/09/07 10:49:37 [INFO] encoded CSR
+2019/09/07 10:49:37 [INFO] signed certificate with serial number 693863076890767957808520050883111819319381650116
+2019/09/07 10:49:37 [WARNING] This certificate lacks a "hosts" field. This makes it unsuitable for
+websites. For more information see the Baseline Requirements for the Issuance and Management
+of Publicly-Trusted Certificates, v.1.1.6, from the CA/Browser Forum (https://cabforum.org);
+specifically, section 10.2.3 ("Information Requirements").
+```
+#### master和node互信
+```
+[root@dockerm1 ~]# ssh-keygen 
+[root@dockerm1 ~]# ssh-copy-id root@192.168.1.31
+[root@dockerm1 ~]# ssh-copy-id root@192.168.1.32
+```
+#### 部署etcd集群
+```
+[root@dockerm1 ~]# cd /tools/packages/
+[root@dockerm1 packages]# tar zxf etcd-v3.3.10-linux-amd64.tar.gz -C ../
+[root@dockerm1 packages]# cd ../etcd-v3.3.10-linux-amd64/
+[root@dockerm1 etcd-v3.3.10-linux-amd64]# cp etcd etcdctl /tools/kubernetes/bin/
+[root@dockerm1 etcd-v3.3.10-linux-amd64]# cd
+[root@dockerm1 ~]# mkdir -p /data/kubernetes/etcd/
+
+# 编写etcd的配置文件
+[root@dockerm1 ~]# vim /tools/kubernetes/config/etcd
+#[Member]
+ETCD_NAME="etcd01"
+ETCD_DATA_DIR="/data/kubernetes/etcd/default.etcd"
+ETCD_LISTEN_PEER_URLS="https://192.168.1.35:2380"
+ETCD_LISTEN_CLIENT_URLS="https://192.168.1.35:2379"
+
+#[Clustering]
+ETCD_INITIAL_ADVERTISE_PEER_URLS="https://192.168.1.35:2380"
+ETCD_ADVERTISE_CLIENT_URLS="https://192.168.1.35:2379"
+ETCD_INITIAL_CLUSTER="etcd01=https://192.168.1.35:2380,etcd02=https://192.168.1.31:2380,etcd03=https://192.168.1.32:2380"
+ETCD_INITIAL_CLUSTER_TOKEN="etcd-cluster"
+ETCD_INITIAL_CLUSTER_STATE="new"
+
+# 编写etcd的启动文件
+[root@dockerm1 ~]# vim /usr/lib/systemd/system/etcd.service
+[Unit]
+Description=Etcd Server
+After=network.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+EnvironmentFile=/tools/kubernetes/config/etcd
+ExecStart=/tools/kubernetes/bin/etcd \
+--name=${ETCD_NAME} \
+--data-dir=${ETCD_DATA_DIR} \
+--listen-peer-urls=${ETCD_LISTEN_PEER_URLS} \
+--listen-client-urls=${ETCD_LISTEN_CLIENT_URLS},http://127.0.0.1:2379 \
+--advertise-client-urls=${ETCD_ADVERTISE_CLIENT_URLS} \
+--initial-advertise-peer-urls=${ETCD_INITIAL_ADVERTISE_PEER_URLS} \
+--initial-cluster=${ETCD_INITIAL_CLUSTER} \
+--initial-cluster-token=${ETCD_INITIAL_CLUSTER_TOKEN} \
+--initial-cluster-state=new \
+--cert-file=/tools/kubernetes/ssl/server.pem \
+--key-file=/tools/kubernetes/ssl/server-key.pem \
+--peer-cert-file=/tools/kubernetes/ssl/server.pem \
+--peer-key-file=/tools/kubernetes/ssl/server-key.pem \
+--trusted-ca-file=/tools/kubernetes/ssl/ca.pem \
+--peer-trusted-ca-file=/tools/kubernetes/ssl/ca.pem
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+
+[root@dockerm1 ~]# systemctl daemon-reload
+[root@dockerm1 ~]# systemctl enable etcd
+Created symlink from /etc/systemd/system/multi-user.target.wants/etcd.service to /usr/lib/systemd/system/etcd.service.
+[root@dockerm1 ~]# systemctl start etcd
+
+# 拷贝配置文件和密钥到docker1和docker2上
+[root@dockerm1 ~]# scp /tools/kubernetes/config/etcd 192.168.1.31:/tools/kubernetes/config/   
+[root@dockerm1 ~]# scp /tools/kubernetes/config/etcd 192.168.1.32:/tools/kubernetes/config/
+[root@dockerm1 ~]# scp /usr/lib/systemd/system/etcd.service 192.168.1.31:/usr/lib/systemd/system/etcd.service   
+[root@dockerm1 ~]# scp /usr/lib/systemd/system/etcd.service 192.168.1.32:/usr/lib/systemd/system/etcd.service
+[root@dockerm1 ~]# scp /tools/kubernetes/ssl/*.pem 192.168.1.31:/tools/kubernetes/ssl/
+[root@dockerm1 ~]# scp /tools/kubernetes/ssl/*.pem 192.168.1.32:/tools/kubernetes/ssl/
+[root@dockerm1 ~]# scp /tools/kubernetes/bin/etcd 192.168.1.31:/tools/kubernetes/bin/
+[root@dockerm1 ~]# scp /tools/kubernetes/bin/etcd 192.168.1.32:/tools/kubernetes/bin/
+
+# 配置docker1
+[root@dockerm1 ~]# ssh 192.168.1.31
+[root@docker1 ~]# cat /tools/kubernetes/config/etcd
+#[Member]
+ETCD_NAME="etcd02"
+ETCD_DATA_DIR="/data/kubernetes/etcd/default.etcd"
+ETCD_LISTEN_PEER_URLS="https://192.168.1.31:2380"
+ETCD_LISTEN_CLIENT_URLS="https://192.168.1.31:2379"
+
+#[Clustering]
+ETCD_INITIAL_ADVERTISE_PEER_URLS="https://192.168.1.31:2380"
+ETCD_ADVERTISE_CLIENT_URLS="https://192.168.1.31:2379"
+ETCD_INITIAL_CLUSTER="etcd01=https://192.168.1.35:2380,etcd02=https://192.168.1.31:2380,etcd03=https://192.168.1.32:2380"
+ETCD_INITIAL_CLUSTER_TOKEN="etcd-cluster"
+ETCD_INITIAL_CLUSTER_STATE="new"
+[root@docker1 ~]# systemctl daemon-reload
+[root@docker1 ~]# systemctl enable etcd.service
+[root@docker1 ~]# systemctl start etcd.service
+
+# 配置docker2
+[root@dockerm1 ~]# ssh 192.168.1.32
+[root@docker2 ~]# cat /tools/kubernetes/config/etcd 
+#[Member]
+ETCD_NAME="etcd03"
+ETCD_DATA_DIR="/data/kubernetes/etcd/default.etcd"
+ETCD_LISTEN_PEER_URLS="https://192.168.1.32:2380"
+ETCD_LISTEN_CLIENT_URLS="https://192.168.1.32:2379"
+
+#[Clustering]
+ETCD_INITIAL_ADVERTISE_PEER_URLS="https://192.168.1.32:2380"
+ETCD_ADVERTISE_CLIENT_URLS="https://192.168.1.32:2379"
+ETCD_INITIAL_CLUSTER="etcd01=https://192.168.1.35:2380,etcd02=https://192.168.1.31:2380,etcd03=https://192.168.1.32:2380"
+ETCD_INITIAL_CLUSTER_TOKEN="etcd-cluster"
+ETCD_INITIAL_CLUSTER_STATE="new"
+[root@docker2 ~]# systemctl daemon-reload
+[root@docker2 ~]# systemctl enable etcd.service
+[root@docker2 ~]# systemctl start etcd.service
+
+# 重启一次dockerm1的etcd
+[root@dockerm1 ~]# systemctl restart etcd
+
+# 使用etcdctl验证连接
+[root@dockerm1 ssl]# etcdctl \
+> --ca-file=/tools/kubernetes/ssl/ca.pem \
+> --cert-file=/tools/kubernetes/ssl/server.pem \
+> --key-file=/tools/kubernetes/ssl/server-key.pem \
+> --endpoints="https://192.168.1.35:2379,\
+> https://192.168.1.31:2379,\
+> https://192.168.1.32:2379" cluster-health
+member 49cc7ce5639c4e1a is healthy: got healthy result from https://192.168.1.32:2379
+member a155000d15c5b5b6 is healthy: got healthy result from https://192.168.1.31:2379
+member afdb491c59ce63ff is healthy: got healthy result from https://192.168.1.35:2379
+cluster is healthy
+```
+### 部署flannel网络
+#### 向 etcd 写入集群 Pod 网段信息
+```
+[root@dockerm1 ~]# cd /tools/kubernetes/ssl/
+[root@dockerm1 ssl]# /tools/kubernetes/bin/etcdctl \
+--ca-file=ca.pem --cert-file=server.pem \
+--key-file=server-key.pem \
+--endpoints="https://192.168.1.35:2379,\
+https://192.168.1.31:2379,https://192.168.1.32:2379" \
+set /coreos.com/network/config  '{ "Network": "172.17.0.0/16", "Backend": {"Type":"vxlan"}}'
+
+{ "Network": "172.17.0.0/16", "Backend": {"Type": "vxlan"}}
+```
+#### 安装master flannel网络
+```
+[root@datastore packages]# wget https://github.com/coreos/flannel/releases/download/v0.11.0/flannel-v0.11.0-linux-amd64.tar.gz
+[root@dockerm1 ssl]# cd /tools/packages/
+[root@dockerm1 packages]# tar zxf flannel-v0.11.0-linux-amd64.tar.gz -C ../
+[root@dockerm1 packages]# cp ../flanneld ../mk-docker-opts.sh /tools/kubernetes/bin/
+
+[root@dockerm1 ~]# vim /tools/kubernetes/config/flanneld
+FLANNEL_OPTIONS="--etcd-endpoints=https://192.168.1.35:2379,https://192.168.1.31:2379,https://192.168.1.32:2379 -etcd-cafile=/tools/kubernetes/ssl/ca.pem -etcd-certfile=/tools/kubernetes/ssl/server.pem -etcd-keyfile=/tools/kubernetes/ssl/server-key.pem"
+
+[root@dockerm1 ~]# vim /usr/lib/systemd/system/flanneld.service
+[Unit]
+Description=Flanneld overlay address etcd agent
+After=network-online.target network.target
+Before=docker.service
+
+[Service]
+Type=notify
+EnvironmentFile=/tools/kubernetes/config/flanneld
+ExecStart=/tools/kubernetes/bin/flanneld --ip-masq $FLANNEL_OPTIONS
+ExecStartPost=/tools/kubernetes/bin/mk-docker-opts.sh -k DOCKER_NETWORK_OPTIONS -d /run/flannel/subnet.env
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+
+[root@dockerm1 ~]# cat /usr/lib/systemd/system/docker.service
+[Unit]
+Description=Docker Application Container Engine
+Documentation=https://docs.docker.com
+After=network-online.target firewalld.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+# the default is not to use systemd for cgroups because the delegate issues still
+# exists and systemd currently does not support the cgroup feature set required
+# for containers run by docker
+EnvironmentFile=/run/flannel/subnet.env
+ExecStart=/usr/bin/dockerd $DOCKER_NETWORK_OPTIONS
+ExecReload=/bin/kill -s HUP $MAINPID
+# Having non-zero Limit*s causes performance problems due to accounting overhead
+# in the kernel. We recommend using cgroups to do container-local accounting.
+LimitNOFILE=infinity
+LimitNPROC=infinity
+LimitCORE=infinity
+# Uncomment TasksMax if your systemd version supports it.
+# Only systemd 226 and above support this version.
+#TasksMax=infinity
+TimeoutStartSec=0
+# set delegate yes so that systemd does not reset the cgroups of docker containers
+Delegate=yes
+# kill only the docker process, not all processes in the cgroup
+KillMode=process
+# restart the docker process if it exits prematurely
+Restart=on-failure
+StartLimitBurst=3
+StartLimitInterval=60s
+
+[Install]
+WantedBy=multi-user.target
+
+[root@dockerm1 ~]# systemctl daemon-reload 
+[root@dockerm1 ~]# systemctl start flanneld.service
+[root@dockerm1 ~]# systemctl restart docker.service
+```
+#### 安装node flanneld网络
+```
+# 将配置文件拷贝过去
+[root@dockerm1 ~]# scp /tools/kubernetes/config/flanneld 192.168.1.31:/tools/kubernetes/config/
+[root@dockerm1 ~]# scp /tools/kubernetes/config/flanneld 192.168.1.32:/tools/kubernetes/config/
+[root@dockerm1 ~]# scp /usr/lib/systemd/system/flanneld.service 192.168.1.31:/usr/lib/systemd/system/flanneld.service
+[root@dockerm1 ~]# scp /usr/lib/systemd/system/flanneld.service 192.168.1.32:/usr/lib/systemd/system/flanneld.service
+[root@dockerm1 ~]# scp /usr/lib/systemd/system/docker.service 192.168.1.31:/usr/lib/systemd/system/docker.service
+[root@dockerm1 ~]# scp /usr/lib/systemd/system/docker.service 192.168.1.32:/usr/lib/systemd/system/docker.service 
+[root@dockerm1 ~]# scp /tools/kubernetes/bin/flanneld /tools/kubernetes/bin/mk-docker-opts.sh 192.168.1.31:/tools/kubernetes/bin/
+[root@dockerm1 ~]# scp /tools/kubernetes/bin/flanneld /tools/kubernetes/bin/mk-docker-opts.sh 192.168.1.32:/tools/kubernetes/bin/
+
+[root@docker1 ~]# systemctl daemon-reload 
+[root@docker1 ~]# systemctl start flanneld.service 
+[root@docker1 ~]# systemctl restart docker.service
+
+[root@docker2 ~]# systemctl daemon-reload 
+[root@docker2 ~]# systemctl start flanneld.service 
+[root@docker2 ~]# systemctl restart docker.service 
+```
+### 部署master节点
+kubernetes master 节点运行如下组件：
+- kube-apiserver
+- kube-scheduler
+- kube-controller-manager
+
+kube-scheduler 和 kube-controller-manager 可以以集群模式运行，通过 leader 选举产生一个工作进程，其它进程处于阻塞模式。
+#### 创建 kubelet bootstrap kubeconfig 文件
+1. 解压kubernetes-server包，并复制命令
+```
+[root@dockerm1 tools]# mkdir kubernetes-server
+[root@dockerm1 tools]# tar zxf packages/kubernetes-server-linux-amd64.tar.gz -C kubernetes-server/
+[root@dockerm1 tools]# cd /tools/kubernetes-server/kubernetes/server/bin/
+[root@dockerm1 bin]# cp kube-scheduler kube-apiserver kube-controller-manager kubelet kubectl /tools/kubernetes/bin/
+```
+2. 创建 TLS Bootstrapping Token
+```
+[root@dockerm1 ~]# export Bootstrap_Token=$(head -c 16 /dev/urandom | od -An -t x | tr -d ' ')
+[root@dockerm1 ~]# cat > /tools/kubernetes/config/token.csv <<EOF
+$Bootstrap_Token,kubelet-bootstrap,10001,"system:kubelet-bootstrap"
+EOF
+
+[root@dockerm1 ]# cat /tools/kubernetes/config/token.csv
+cee5834007d1d4be5fd465ae75ea3ffc,kubelet-bootstrap,10001,"system:kubelet-bootstrap"
+```
+3. 创建 kubelet bootstrap kubeconfig
+```
+[root@dockerm1 ]# cd /tools/kubernetes/config/
+[root@dockerm1 config]# vim bootstrap_kubeconfig.sh
+# 创建kubelet bootstrapping kubeconfig 
+BOOTSTRAP_TOKEN=cee5834007d1d4be5fd465ae75ea3ffc
+KUBE_APISERVER="https://192.168.1.35:6443"
+# 设置集群参数
+kubectl config set-cluster kubernetes \
+  --certificate-authority=../ssl/ca.pem \
+  --embed-certs=true \
+  --server=${KUBE_APISERVER} \
+  --kubeconfig=bootstrap.kubeconfig
+
+# 设置客户端认证参数
+kubectl config set-credentials kubelet-bootstrap \
+  --token=${BOOTSTRAP_TOKEN} \
+  --kubeconfig=bootstrap.kubeconfig
+
+# 设置上下文参数
+kubectl config set-context default \
+  --cluster=kubernetes \
+  --user=kubelet-bootstrap \
+  --kubeconfig=bootstrap.kubeconfig
+
+# 设置默认上下文
+kubectl config use-context default --kubeconfig=bootstrap.kubeconfig
+
+#----------------------
+
+# 创建kube-proxy kubeconfig文件
+
+kubectl config set-cluster kubernetes \
+  --certificate-authority=../ssl/ca.pem \
+  --embed-certs=true \
+  --server=${KUBE_APISERVER} \
+  --kubeconfig=kube-proxy.kubeconfig
+
+kubectl config set-credentials kube-proxy \
+  --client-certificate=../ssl/kube-proxy.pem \
+  --client-key=../ssl/kube-proxy-key.pem \
+  --embed-certs=true \
+  --kubeconfig=kube-proxy.kubeconfig
+
+kubectl config set-context default \
+  --cluster=kubernetes \
+  --user=kube-proxy \
+  --kubeconfig=kube-proxy.kubeconfig
+
+kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
+[root@dockerm1 config]# sh bootstrap_kubeconfig.sh
+
+[root@dockerm1 config]# scp bootstrap.kubeconfig kube-proxy.kubeconfig 192.168.1.31:/tools/kubernetes/config/
+[root@dockerm1 config]# scp bootstrap.kubeconfig kube-proxy.kubeconfig 192.168.1.32:/tools/kubernetes/config/
+```
+#### 部署kube-apiserver组件
+1.  创建apiserver配置文件
+```
+[root@dockerm1 ~]# vim /tools/kubernetes/config/kube-apiserver
+KUBE_APISERVER_OPTS="--logtostderr=true \
+--v=4 \
+--etcd-servers=https://192.168.1.35:2379,https://192.168.1.31:2379,https://192.168.1.32:2379 \
+--bind-address=192.168.1.35 \   # 安全的监听地址
+--secure-port=6443 \
+--advertise-address=192.168.1.35 \  # 集群通信地址
+--allow-privileged=true \     # 允许授权
+--service-cluster-ip-range=10.10.10.0/24 \  # 分配集群中service负载均衡中的网段
+--enable-admission-plugins=NamespaceLifecycle,LimitRanger,SecurityContextDeny,ServiceAccount,ResourceQuota,NodeRestriction \    # 准入模块
+--authorization-mode=RBAC,Node \    # 认证模块
+--enable-bootstrap-token-auth \
+--token-auth-file=/tools/kubernetes/config/token.csv \
+--service-node-port-range=30000-50000 \
+--tls-cert-file=/tools/kubernetes/ssl/server.pem  \
+--tls-private-key-file=/tools/kubernetes/ssl/server-key.pem \
+--client-ca-file=/tools/kubernetes/ssl/ca.pem \
+--service-account-key-file=/tools/kubernetes/ssl/ca-key.pem \
+--etcd-cafile=/tools/kubernetes/ssl/ca.pem \
+--etcd-certfile=/tools/kubernetes/ssl/server.pem \
+--etcd-keyfile=/tools/kubernetes/ssl/server-key.pem"
+```
+2. 创建 kube-apiserver systemd unit 文件
+```
+[root@dockerm1 ~]# vim /usr/lib/systemd/system/kube-apiserver.service
+[Unit]
+Description=Kubernetes API Server
+Documentation=https://github.com/kubernetes/kubernetes
+
+[Service]
+EnvironmentFile=-/tools/kubernetes/config/kube-apiserver
+ExecStart=/tools/kubernetes/bin/kube-apiserver $KUBE_APISERVER_OPTS
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+3. 启动服务
+```
+[root@dockerm1 ~]# systemctl daemon-reload
+[root@dockerm1 ~]# systemctl enable kube-apiserver
+Created symlink from /etc/systemd/system/multi-user.target.wants/kube-apiserver.service to /usr/lib/systemd/system/kube-apiserver.service.
+[root@dockerm1 ~]# systemctl restart kube-apiserver
+[root@dockerm1 ~]# ps -ef |grep kube-apiserver
+root      92089      1 47 19:14 ?        00:00:05 /tools/kubernetes/bin/kube-apiserver --logtostderr=true --v=4 --etcd-servers=https://192.168.1.35:2379,https://192.168.1.31:2379,https://192.168.1.32:2379 --bind-address=192.168.1.35 --secure-port=6443 --advertise-address=192.168.1.35 --allow-privileged=true --service-cluster-ip-range=10.10.10.0/24 --enable-admission-plugins=NamespaceLifecycle,LimitRanger,SecurityContextDeny,ServiceAccount,ResourceQuota,NodeRestriction --authorization-mode=RBAC,Node --enable-bootstrap-token-auth --token-auth-file=/tools/kubernetes/config/token.csv --service-node-port-range=30000-50000 --tls-cert-file=/tools/kubernetes/ssl/server.pem --tls-private-key-file=/tools/kubernetes/ssl/server-key.pem --client-ca-file=/tools/kubernetes/ssl/ca.pem --service-account-key-file=/tools/kubernetes/ssl/ca-key.pem --etcd-cafile=/tools/kubernetes/ssl/ca.pem --etcd-certfile=/tools/kubernetes/ssl/server.pem --etcd-keyfile=/tools/kubernetes/ssl/server-key.pem
+root      92112  88968  0 19:14 pts/0    00:00:00 grep --color=auto kube-apiserver
+```
+#### 部署kube-controller-manager组件
+1. 创建kube-controller-manager配置文件
+```
+[root@dockerm1 ~]# vim /tools/kubernetes/config/kube-controller-manager
+KUBE_CONTROLLER_MANAGER_OPTS="--logtostderr=true \
+--v=4 \
+--master=127.0.0.1:8080 \
+--leader-elect=true \
+--address=127.0.0.1 \
+--service-cluster-ip-range=10.10.10.0/24 \
+--cluster-name=kubernetes \
+--cluster-signing-cert-file=/tools/kubernetes/ssl/ca.pem \
+--cluster-signing-key-file=/tools/kubernetes/ssl/ca-key.pem  \
+--root-ca-file=/tools/kubernetes/ssl/ca.pem \
+--service-account-private-key-file=/tools/kubernetes/ssl/ca-key.pem"
+```
+2. 创建kube-controller-manager systemd unit 文件
+```
+[root@dockerm1 ~]# vim /usr/lib/systemd/system/kube-controller-manager.service
+[Unit]
+Description=Kubernetes Controller Manager
+Documentation=https://github.com/kubernetes/kubernetes
+
+[Service]
+EnvironmentFile=-/tools/kubernetes/config/kube-controller-manager
+ExecStart=/tools/kubernetes/bin/kube-controller-manager $KUBE_CONTROLLER_MANAGER_OPTS
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+3. 启动kube-controller-manager
+```
+[root@dockerm1 ~]# systemctl daemon-reload
+[root@dockerm1 ~]# systemctl enable kube-controller-manager
+Created symlink from /etc/systemd/system/multi-user.target.wants/kube-controller-manager.service to /usr/lib/systemd/system/kube-controller-manager.service.
+[root@dockerm1 ~]# systemctl restart kube-controller-manager
+[root@dockerm1 ~]# ps -ef |grep kube-controller-manager
+root      92589      1  2 19:20 ?        00:00:01 /tools/kubernetes/bin/kube-controller-manager --logtostderr=true --v=4 --master=127.0.0.1:8080 --leader-elect=true --address=127.0.0.1 --service-cluster-ip-range=10.10.10.0/24 --cluster-name=kubernetes --cluster-signing-cert-file=/tools/kubernetes/ssl/ca.pem --cluster-signing-key-file=/tools/kubernetes/ssl/ca-key.pem --root-ca-file=/tools/kubernetes/ssl/ca.pem --service-account-private-key-file=/tools/kubernetes/ssl/ca-key.pem
+root      92707  88968  0 19:21 pts/0    00:00:00 grep --color=auto kube-controller-manager
+```
+#### 部署kube-scheduler组件
+1. 创建kube-scheduler配置文件
+```
+[root@dockerm1 ~]# vim /tools/kubernetes/config/kube-scheduler
+KUBE_SCHEDULER_OPTS="--logtostderr=true --v=4 --master=127.0.0.1:8080 --leader-elect"
+```
+2. 创建kube-scheduler systemd unit 文件
+```
+[root@dockerm1 ~]# vim /usr/lib/systemd/system/kube-scheduler.service
+[Unit]
+Description=Kubernetes Scheduler
+Documentation=https://github.com/kubernetes/kubernetes
+
+[Service]
+EnvironmentFile=-/tools/kubernetes/config/kube-scheduler
+ExecStart=/tools/kubernetes/bin/kube-scheduler $KUBE_SCHEDULER_OPTS
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+3. 启动kube-scheduler
+```
+[root@dockerm1 ~]# systemctl daemon-reload
+[root@dockerm1 ~]# systemctl enable kube-scheduler.service 
+Created symlink from /etc/systemd/system/multi-user.target.wants/kube-scheduler.service to /usr/lib/systemd/system/kube-scheduler.service.
+[root@dockerm1 ~]# systemctl restart kube-scheduler.service
+[root@dockerm1 ~]# ps -ef |grep kube-scheduler
+root      93057      1  8 19:25 ?        00:00:01 /tools/kubernetes/bin/kube-scheduler --logtostderr=true --v=4 --master=127.0.0.1:8080 --leader-elect
+root      93079  88968  0 19:25 pts/0    00:00:00 grep --color=auto kube-scheduler
+```
+4. 查看master集群状态
+```
+[root@dockerm1 ~]# kubectl get cs
+NAME                 STATUS    MESSAGE             ERROR
+scheduler            Healthy   ok                  
+controller-manager   Healthy   ok                  
+etcd-2               Healthy   {"health":"true"}   
+etcd-0               Healthy   {"health":"true"}   
+etcd-1               Healthy   {"health":"true"} 
+```
+
+### 部署node节点
+kubernetes node 节点运行如下组件：
+- docker 前面已经部署
+- kubelet
+- kube-proxy
+```
+[root@dockerm1 ~]# cd /tools/kubernetes-server/kubernetes/server/bin/
+[root@dockerm1 bin]# scp kubelet kube-proxy kubectl 192.168.1.31:/tools/kubernetes/bin/
+[root@dockerm1 bin]# scp kubelet kube-proxy kubectl 192.168.1.32:/tools/kubernetes/bin/
+```
+#### 部署kubelet组件
+- kublet 运行在每个 node 节点上，接收 kube-apiserver 发送的请求，管理 Pod 容器，执行交互式命令，如exec、run、logs 等;
+- kublet 启动时自动向 kube-apiserver 注册节点信息，内置的 cadvisor 统计和监控节点的资源使用情况;
+
+1. 创建kubelet 参数配置文件拷贝到所有 nodes节点  
+创建kubelet 参数配置模板文件：
+```
+[root@dockerm1 config]# vim /tools/kubernetes/config/kubelet.config
+kind: KubeletConfiguration
+apiVersion: kubelet.config.k8s.io/v1beta1
+address: 192.168.1.31
+port: 10250
+readOnlyPort: 10255
+cgroupDriver: cgroupfs
+clusterDNS: ["10.10.10.2"]
+clusterDomain: cluster.local.
+failSwapOn: false
+authentication:
+  anonymous:
+    enabled: true
+
+[root@dockerm1 config]# scp kubelet.config 192.168.1.31:/tools/kubernetes/config/
+[root@dockerm1 config]# scp kubelet.config 192.168.1.32:/tools/kubernetes/config/
+```
+2. 创建kubeletr配置文件
+```
+[root@docker1 ~]# cat  /tools/kubernetes/config/kubelet.config
+kind: KubeletConfiguration
+apiVersion: kubelet.config.k8s.io/v1beta1
+address: 192.168.1.31
+port: 10250
+readOnlyPort: 10255
+cgroupDriver: cgroupfs
+clusterDNS: ["10.10.10.2"]
+clusterDomain: cluster.local.
+failSwapOn: false
+authentication:
+  anonymous:
+    enabled: true
+
+[root@docker1 ~]# vim /tools/kubernetes/config/kubelet
+KUBELET_OPTS="--logtostderr=true \
+--v=4 \
+--hostname-override=192.168.1.31 \
+--kubeconfig=/tools/kubernetes/config/kubelet.kubeconfig \
+--bootstrap-kubeconfig=/tools/kubernetes/config/bootstrap.kubeconfig \
+--config=/tools/kubernetes/config/kubelet.config \
+--cert-dir=/tools/kubernetes/ssl \
+--pod-infra-container-image=registry.cn-hangzhou.aliyuncs.com/google-containers/pause-amd64:3.0"
+```
+2. 创建kubelet systemd unit 文件
+```
+[root@docker1 ~]# vim /usr/lib/systemd/system/kubelet.service
+[Unit]
+Description=Kubernetes Kubelet
+After=docker.service
+Requires=docker.service
+
+[Service]
+EnvironmentFile=/tools/kubernetes/config/kubelet
+ExecStart=/tools/kubernetes/bin/kubelet $KUBELET_OPTS
+Restart=on-failure
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
+
+```
+3. 将kubelet-bootstrap用户绑定到系统集群角色
+```
+[root@dockerm1 config]# kubectl create clusterrolebinding kubelet-bootstrap --clusterrole=system:node-bootstrapper --user=kubelet-bootstrap
+clusterrolebinding.rbac.authorization.k8s.io/kubelet-bootstrap created
+```
+4. 启动kubelet
+```
+[root@docker1 ~]# systemctl daemon-reload
+[root@docker1 ~]# systemctl enable kubelet
+Created symlink from /etc/systemd/system/multi-user.target.wants/kubelet.service to /usr/lib/systemd/system/kubelet.service.
+[root@docker1 ~]# systemctl restart kubelet
+```
+
+5. approve kubelet CSR 请求
+
+可以手动或自动 approve CSR 请求。推荐使用自动的方式，因为从 v1.8 版本开始，可以自动轮转approve csr 后生成的证书。  
+手动 approve CSR 请求   
+查看 CSR 列表：
+```
+[root@dockerm1 ]# kubectl get csr
+NAME                                                   AGE   REQUESTOR           CONDITION
+node-csr-9KjeEJiZiMPVJvNko4DXyxJCt7w6nBD6bCEAqDdRbI0   78s   kubelet-bootstrap   Pending
+[root@dockerm1 ]# kubectl certificate approve node-csr-9KjeEJiZiMPVJvNko4DXyxJCt7w6nBD6bCEAqDdRbI0
+certificatesigningrequest.certificates.k8s.io/node-csr-9KjeEJiZiMPVJvNko4DXyxJCt7w6nBD6bCEAqDdRbI0 approved
+[root@dockerm1 ~]# kubectl certificate approve node-csr-wHfAoxSFqKgmbtQhiTJBwPnp3gYaC4V6LzKEMbHUbtA
+certificatesigningrequest.certificates.k8s.io/node-csr-wHfAoxSFqKgmbtQhiTJBwPnp3gYaC4V6LzKEMbHUbtA approved
+[root@dockerm1 ~]# kubectl get csr
+NAME                                                   AGE     REQUESTOR           CONDITION
+node-csr-9KjeEJiZiMPVJvNko4DXyxJCt7w6nBD6bCEAqDdRbI0   13m     kubelet-bootstrap   Approved,Issued
+node-csr-wHfAoxSFqKgmbtQhiTJBwPnp3gYaC4V6LzKEMbHUbtA   4m42s   kubelet-bootstrap   Approved,Issued
+
+[root@dockerm1 ~]# kubectl get nodes
+NAME           STATUS   ROLES    AGE   VERSION
+192.168.1.31   Ready    <none>   24s   v1.15.3
+192.168.1.32   Ready    <none>   11m   v1.15.3
+```
+- Requesting User：请求 CSR 的用户，kube-apiserver 对它进行认证和授权；
+- Subject：请求签名的证书信息；
+- 证书的 CN 是 system:node:kube-node2， Organization 是 system:nodes，kube-apiserver - 的 Node 授权模式会授予该证书的相关权限；
+#### 部署kube-proxy组件
+kube-proxy 运行在所有 node节点上，它监听 apiserver 中 service 和 Endpoint 的变化情况，创建路由规则来进行服务负载均衡。
+1. 创建 kube-proxy 配置文件
+
+```
+[root@docker1 ~]# vim /tools/kubernetes/config/kube-proxy
+KUBE_PROXY_OPTS="--logtostderr=true \
+--v=4 \
+--hostname-override=192.168.1.31 \
+--cluster-cidr=10.10.10.0/24 \
+--kubeconfig=/tools/kubernetes/config/kube-proxy.kubeconfig"
+```
+- bindAddress: 监听地址；
+- clientConnection.kubeconfig: 连接 apiserver 的 kubeconfig 文件；
+- clusterCIDR: kube-proxy 根据 –cluster-cidr 判断集群内部和外部流量，指定 –cluster-cidr 或 –masquerade-all 选项后 kube-proxy 才会对访问 Service IP 的请求做 SNAT；
+- hostnameOverride: 参数值必须与 kubelet 的值一致，否则 kube-proxy 启动后会找不到该 Node，从而不会创建任何 ipvs 规则；
+- mode: 使用 ipvs 模式；
+2. 创建kube-proxy systemd unit 文件
+```
+[root@docker1 ~]# vim /usr/lib/systemd/system/kube-proxy.service
+[Unit]
+Description=Kubernetes Proxy
+After=network.target
+
+[Service]
+EnvironmentFile=-/tools/kubernetes/config/kube-proxy
+ExecStart=/tools/kubernetes/bin/kube-proxy $KUBE_PROXY_OPTS
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+3. 启动kube-proxy
+```
+[root@docker1 ~]# systemctl daemon-reload
+[root@docker1 ~]# systemctl enable kube-proxy
+Created symlink from /etc/systemd/system/multi-user.target.wants/kube-proxy.service to /usr/lib/systemd/system/kube-proxy.service.
+[root@docker1 ~]# systemctl restart kube-proxy
+```
+### 集群状态
+#### 打master或者node节点的标签
+```
+kubectl label node 192.168.1.35  node-role.kubernetes.io/master='master'
+kubectl label node 192.168.1.31  node-role.kubernetes.io/node='node'
+kubectl label node 192.168.1.32  node-role.kubernetes.io/node='node'
+
+[root@dockerm1 ~]# kubectl get node,cs
+NAME                STATUS   ROLES   AGE   VERSION
+node/192.168.1.31   Ready    node    13m   v1.15.3
+node/192.168.1.32   Ready    node    24m   v1.15.3
+
+NAME                                 STATUS    MESSAGE             ERROR
+componentstatus/controller-manager   Healthy   ok                  
+componentstatus/scheduler            Healthy   ok                  
+componentstatus/etcd-1               Healthy   {"health":"true"}   
+componentstatus/etcd-2               Healthy   {"health":"true"}   
+componentstatus/etcd-0               Healthy   {"health":"true"} 
+```
+## 部署Kubernetes dashboard
+文件下载地址:https://github.com/kubernetes/kubernetes/tree/master/cluster/addons/dashboard
+```
+[root@dockerm1 ~]# mkdir /tools/kubernetes/UI
+[root@dockerm1 ~]# cd /tools/kubernetes/UI/
+```
+```
+[root@dockerm1 UI]# vim dashboard-controller.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+    addonmanager.kubernetes.io/mode: Reconcile
+  name: kubernetes-dashboard
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-dashboard
+  namespace: kube-system
+  labels:
+    k8s-app: kubernetes-dashboard
+    addonmanager.kubernetes.io/mode: Reconcile
+spec:
+  selector:
+    matchLabels:
+      k8s-app: kubernetes-dashboard
+  template:
+    metadata:
+      labels:
+        k8s-app: kubernetes-dashboard
+      annotations:
+        seccomp.security.alpha.kubernetes.io/pod: 'docker/default'
+    spec:
+      priorityClassName: system-cluster-critical
+      containers:
+      - name: kubernetes-dashboard
+        image: registry.cn-hangzhou.aliyuncs.com/google-containers/kubernetes-dashboard-amd64:v1.10.1
+        resources:
+          limits:
+            cpu: 100m
+            memory: 300Mi
+          requests:
+            cpu: 50m
+            memory: 100Mi
+        ports:
+        - containerPort: 8443
+          protocol: TCP
+        args:
+          # PLATFORM-SPECIFIC ARGS HERE
+          - --auto-generate-certificates
+        volumeMounts:
+        - name: kubernetes-dashboard-certs
+          mountPath: /certs
+        - name: tmp-volume
+          mountPath: /tmp
+        livenessProbe:
+          httpGet:
+            scheme: HTTPS
+            path: /
+            port: 8443
+          initialDelaySeconds: 30
+          timeoutSeconds: 30
+      volumes:
+      - name: kubernetes-dashboard-certs
+        secret:
+          secretName: kubernetes-dashboard-certs
+      - name: tmp-volume
+        emptyDir: {}
+      serviceAccountName: kubernetes-dashboard
+      tolerations:
+      - key: "CriticalAddonsOnly"
+        operator: "Exists"
+```
+```
+[root@dockerm1 UI]# vi dashboard-rbac.yaml
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+    addonmanager.kubernetes.io/mode: Reconcile
+  name: kubernetes-dashboard-minimal
+  namespace: kube-system
+rules:
+  # Allow Dashboard to get, update and delete Dashboard exclusive secrets.
+- apiGroups: [""]
+  resources: ["secrets"]
+  resourceNames: ["kubernetes-dashboard-key-holder", "kubernetes-dashboard-certs"]
+  verbs: ["get", "update", "delete"]
+  # Allow Dashboard to get and update 'kubernetes-dashboard-settings' config map.
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["kubernetes-dashboard-settings"]
+  verbs: ["get", "update"]
+  # Allow Dashboard to get metrics from heapster.
+- apiGroups: [""]
+  resources: ["services"]
+  resourceNames: ["heapster"]
+  verbs: ["proxy"]
+- apiGroups: [""]
+  resources: ["services/proxy"]
+  resourceNames: ["heapster", "http:heapster:", "https:heapster:"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kubernetes-dashboard-minimal
+  namespace: kube-system
+  labels:
+    k8s-app: kubernetes-dashboard
+    addonmanager.kubernetes.io/mode: Reconcile
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubernetes-dashboard-minimal
+subjects:
+- kind: ServiceAccount
+  name: kubernetes-dashboard
+  namespace: kube-system
+```
+```
+[root@dockerm1 UI]# cat dashboard-configmap.yaml 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+    # Allows editing resource and makes sure it is created first.
+    addonmanager.kubernetes.io/mode: EnsureExists
+  name: kubernetes-dashboard-settings
+  namespace: kube-system
+```
+```
+[root@dockerm1 UI]# cat dashboard-secret.yaml 
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+    # Allows editing resource and makes sure it is created first.
+    addonmanager.kubernetes.io/mode: EnsureExists
+  name: kubernetes-dashboard-certs
+  namespace: kube-system
+type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    k8s-app: kubernetes-dashboard
+    # Allows editing resource and makes sure it is created first.
+    addonmanager.kubernetes.io/mode: EnsureExists
+  name: kubernetes-dashboard-key-holder
+  namespace: kube-system
+type: Opaque
+```
+```
+[root@dockerm1 UI]# vi dashboard-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kubernetes-dashboard
+  namespace: kube-system
+  labels:
+    k8s-app: kubernetes-dashboard
+    kubernetes.io/cluster-service: "true"
+    addonmanager.kubernetes.io/mode: Reconcile
+spec:
+  selector:
+    k8s-app: kubernetes-dashboard
+  type: NodePort
+  ports:
+  - port: 443
+    targetPort: 8443
+```
+```
+[root@dockerm1 UI]# kubectl create -f dashboard-rbac.yaml 
+[root@dockerm1 UI]# kubectl create -f dashboard-controller.yaml 
+[root@dockerm1 UI]# kubectl create -f dashboard-configmap.yaml  
+[root@dockerm1 UI]# kubectl create -f dashboard-secret.yaml 
+[root@dockerm1 UI]# kubectl create -f dashboard-service.yaml
+
+[root@dockerm1 UI]# kubectl get pod -n kube-system
+NAME                                    READY   STATUS    RESTARTS   AGE
+kubernetes-dashboard-756b84b78d-xv8ws   1/1     Running   7          12m
+
+[root@dockerm1 config]# kubectl get all -n kube-system -o wide
+NAME                                        READY   STATUS    RESTARTS   AGE   IP            NODE           NOMINATED NODE   READINESS GATES
+pod/kubernetes-dashboard-756b84b78d-xv8ws   1/1     Running   7          31m   172.17.73.3   192.168.1.31   <none>           <none>
+
+NAME                           TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)         AGE   SELECTOR
+service/kubernetes-dashboard   NodePort   10.10.10.135   <none>        443:47825/TCP   16m   k8s-app=kubernetes-dashboard
+```
+```
+访问网页https://192.168.1.31:47825
+```
+### 创建一个管理员用户
+```
+[root@dockerm1 UI]# vim admin-user.yaml
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: admin
+  annotations:
+    rbac.authorization.kubernetes.io/autoupdate: "true"
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+- kind: ServiceAccount
+  name: admin
+  namespace: kube-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin
+  namespace: kube-system
+  labels:
+    kubernetes.io/cluster-service: "true"
+    addonmanager.kubernetes.io/mode: Reconcile
+
+# 通过执行如下命令创建admin-user
+[root@dockerm1 UI]# kubectl create -f admin-user.yaml 
+clusterrolebinding.rbac.authorization.k8s.io/admin created
+serviceaccount/admin created
+
+# 获取管理员用户的Token
+[root@dockerm1 UI]# kubectl describe  secret admin --namespace=kube-system
+Name:         admin-token-fgmnq
+Namespace:    kube-system
+Labels:       <none>
+Annotations:  kubernetes.io/service-account.name: admin
+              kubernetes.io/service-account.uid: e3126460-959c-416d-8055-7a359f1b2d62
+
+Type:  kubernetes.io/service-account-token
+
+Data
+====
+ca.crt:     1281 bytes
+namespace:  11 bytes
+token:      eyJhbGciOiJSUzI1NiIsImtpZCI6IiJ9.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJrdWJlLXN5c3RlbSIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VjcmV0Lm5hbWUiOiJhZG1pbi10b2tlbi1mZ21ucSIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50Lm5hbWUiOiJhZG1pbiIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50LnVpZCI6ImUzMTI2NDYwLTk1OWMtNDE2ZC04MDU1LTdhMzU5ZjFiMmQ2MiIsInN1YiI6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDprdWJlLXN5c3RlbTphZG1pbiJ9.Mc--vIoKFPF8VPZ85br6M27tLNR8n0fteknREJo7I1lhbsFTHqOTFZ2vk4aozDqm9NQtTlZ-D3MByQQwZSt9oGN0wmcvyBLtfJQLeQJs3dsEd1ZUM3mU6S3LxaXm5Ug4OcbpnVAW1GXKlYR3T4JdZZlZROOF8V7pYx0BFKIn4XotJ65gqUhnWmra1j4Mav6JNpsiN416eukGn7aoq9zFVXMLiv5s5ldrQb2BS9RLm76tw1fOq03cDxWfN-iifgrPs4uXTh6tJrwrWwSEEtOwdHILNkHqwAb621yv8mEN3opp4vUO_IoKYOLDNcq-qTcs4yJxXdnf6A_vB4wEmL_mFw
+```
 
 
 
