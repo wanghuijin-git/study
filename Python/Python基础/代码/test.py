@@ -1,7 +1,20 @@
-def demo(num, *args, **kwargs):
+class Cat:
     
-    print(num)
-    print(args)
-    print(kwargs)
+    def __init__(self, new_name):
 
-demo(1, 2, 3, 4, 5, name="小明", age=18, gender=True)
+        self.name = new_name
+
+        print("%s 来了" % self.name)
+
+    def __del__(self):
+
+        print("%s 去了" % self.name)
+
+# tom 是一个全局变量
+tom = Cat("Tom")
+print(tom.name)
+
+# del 关键字可以删除一个对象
+del tom
+
+print("-" * 50)
