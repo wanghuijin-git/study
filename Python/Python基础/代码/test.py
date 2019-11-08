@@ -1,20 +1,13 @@
-class Cat:
-    
-    def __init__(self, new_name):
+# 导入模块
+# 定义全局变量
+# 定义类
+# 定义函数
 
-        self.name = new_name
+# 在代码的最下方
+def main():
+    # ...
+    pass
 
-        print("%s 来了" % self.name)
-
-    def __del__(self):
-
-        print("%s 去了" % self.name)
-
-# tom 是一个全局变量
-tom = Cat("Tom")
-print(tom.name)
-
-# del 关键字可以删除一个对象
-del tom
-
-print("-" * 50)
+# 根据 __name__ 判断是否执行下方代码
+if __name__ == "__main__":
+    main()
